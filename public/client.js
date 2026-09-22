@@ -60,8 +60,8 @@ const sfx = {
 // sirve la página también sirve el WebSocket, así que basta con usar el
 // mismo host. Sustituye RENDER_WS_URL por la URL que te dé Render al
 // desplegar server.js (empieza por wss://).
-const RENDER_WS_URL = 'wss://REPLACE-CON-TU-SERVIDOR.onrender.com';
-const VERCEL_HOSTS = ['REPLACE-CON-TU-DOMINIO.vercel.app'];
+const RENDER_WS_URL = 'wss://eightbits-battle.onrender.com';
+const VERCEL_HOSTS = ['8bits-battle.vercel.app'];
 
 function wsUrl() {
   if (VERCEL_HOSTS.includes(location.hostname)) return RENDER_WS_URL;
