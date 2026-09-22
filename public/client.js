@@ -55,12 +55,26 @@ const sfx = {
 // ------------------------------------------------------------
 //  Conexión WebSocket
 // ------------------------------------------------------------
+// Si la página se sirve como estático desde Vercel, el servidor de juego
+// (WebSocket) vive aparte, en Render. En LAN/local, la misma máquina que
+// sirve la página también sirve el WebSocket, así que basta con usar el
+// mismo host. Sustituye RENDER_WS_URL por la URL que te dé Render al
+// desplegar server.js (empieza por wss://).
+const RENDER_WS_URL = 'wss://REPLACE-CON-TU-SERVIDOR.onrender.com';
+const VERCEL_HOSTS = ['REPLACE-CON-TU-DOMINIO.vercel.app'];
+
+function wsUrl() {
+  if (VERCEL_HOSTS.includes(location.hostname)) return RENDER_WS_URL;
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${proto}://${location.host}`;
+}
+
 function send(obj) {
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
 }
 
 function connect() {
-  ws = new WebSocket(`ws://${location.host}`);
+  ws = new WebSocket(wsUrl());
   ws.onopen = () => { $('#offline').hidden = true; };
   ws.onmessage = e => {
     const m = JSON.parse(e.data);

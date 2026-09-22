@@ -116,6 +116,7 @@ let phaseStart = Date.now();
 let winner = null;           // nombre del ganador o null (empate)
 let nextId = 1;
 let colorIdx = 0;
+let hostAssigned = false;    // true mientras haya un host conectado
 
 function setPhase(p) { phase = p; phaseStart = Date.now(); }
 
@@ -293,7 +294,12 @@ const wss = new WebSocketServer({ server, maxPayload: 1024 });
 
 wss.on('connection', (ws, req) => {
   const addr = req.socket.remoteAddress || '';
-  const isHost = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(addr);
+  const isLocalhost = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(addr);
+  // En LAN, el equipo del profesor (localhost) siempre es host. En un
+  // despliegue online no hay "localhost", así que el primer jugador que
+  // se conecta mientras no haya host asignado pasa a serlo.
+  const isHost = isLocalhost || !hostAssigned;
+  if (isHost) hostAssigned = true;
   const p = {
     id: nextId++, ws, name: '', joined: false, isHost,
     color: COLORS[colorIdx++ % COLORS.length],
@@ -342,6 +348,7 @@ wss.on('connection', (ws, req) => {
     if (p.inGame && p.alive && phase === 'playing') {
       events.push({ k: 'kill', killer: 'desconexión', victim: p.name, id: p.id });
     }
+    if (p.isHost) hostAssigned = false;
     players.delete(p.id);
   });
 });
