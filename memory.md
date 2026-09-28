@@ -100,7 +100,8 @@ Petición: "demasiado difícil, no imposible pero que sea realmente un desafío 
 ## Semáforo, turbo y música (2026-09-28)
 
 - Semáforo de 5 s en la salida (pedido por el usuario): `COUNTDOWN_MS = 5000`, 1 luz roja por segundo, verde al salir.
-- Turbo para el último "hasta que alcance a los demás": interpretado como alcanzar al coche que tiene justo delante (se activa a > 25 muestras = 200 px, se apaga a < 8). Solo en carreras.
+- Turbo para el último "hasta que alcance a los demás": interpretado como alcanzar al coche que tiene justo delante (se apaga a < 8 muestras). Solo en carreras.
+- **Cambio posterior del usuario:** "que el turbo solo exista cuando hay más de 3 jugadores y el último jugador está muy lejos". Ahora: 4 pilotos o más en la carrera, y el último a más de ~5 s del de delante (antes bastaban 25 muestras = 200 px, menos de medio segundo). "Muy lejos" = 5 s lo decidió Claude; se mide en tiempo para que valga igual con karts y con F1.
 - **Música:** el usuario pidió "My Own Summer" de Deftones en versión 8 bits. **No se hizo**: una versión 8 bits reproduce la melodía/riff con derechos de autor y además se publicaría en Vercel. En su lugar: chiptune **original** de estilo metal (Web Audio) + opción de poner un `public/music.mp3` propio (con permiso). Si vuelve a pedirlo, mantener la negativa y ofrecer el archivo propio.
 
 ## Pistas reales a escala + F1 + puentes (2026-09-28)
@@ -125,10 +126,22 @@ Petición (con 5 fotos): "pantalla de selección de autos, estos van a estar en 
 
 - Se usan en las pistas inventadas y en la arena; en las reales todos siguen con F1.
 - El garaje se abre solo tras poner el nombre (una vez por conexión); después, desde la sala con CAMBIAR COCHE. Se recuerda en localStorage.
-- Decisiones de Claude: el carácter de cada coche (R34 equilibrado; WRC el mejor en hierba y barro; Challenger el más rápido y pesado, pero derrapa; Supra rápido y estable; Golf ligero, el que mejor gira), fichas con 4 barras (velocidad, aceleración, manejo, peso), dibujos pixel art propios vistos desde arriba y sin logos, y que el peso cuente en los empujones de la arena.
-- Equilibrio simulado (`sim-cars.js` en el scratchpad): 4 de los 5 coches ganan en alguna pista (el R34, equilibrado, en ninguna, pero nunca es el último); desventaja media 1,9-2,9 %.
+- Dibujos pixel art propios vistos desde arriba y sin logos (decisión de Claude).
+- **Cambio posterior del usuario:** al principio cada coche tenía carácter propio (punta, aceleración, giro, derrape, peso, WRC mejor en hierba) y fichas con barras. El usuario lo rechazó: "quiero que todos los vehículos tengan las mismas características y velocidad… lo que quiero que dejes son las skins y los nombres". Ahora todos usan `PHYS`, mismo peso en la arena, y la ficha solo enseña nombre y colores. **No volver a dar ventajas por coche.**
 - Bug encontrado al hacerlo: `buildTrack` tiene un 2º parámetro (física) y `[...].map(buildTrack)` le pasaba el índice → F1 no se aplicaba en las reales y perfiles NaN. Usar siempre `map(d => buildTrack(d))`.
 - Móvil: en vertical 2 columnas, en horizontal los 5 en fila (3 si la pantalla es estrecha); "¡LISTO!" siempre visible. En horizontal la cuenta atrás se apila bajo los botones de arriba (`shortView()`); antes el nombre de la pista quedaba tapado. El semáforo se subió para no tapar los coches de delante en la parrilla.
+
+## Pantalla de carga de las pistas reales (2026-09-28)
+
+Petición (con 4 fotos: Mercedes W14 negro con verde agua, Ferrari F1-75 rojo, Red Bull RB18 azul marino con rojo y amarillo, Renault R.S.19 negro y amarillo): "una pantalla de carga para los mapas a escala mostrando los siguientes fórmulas 1".
+- Fase nueva `loading` en el servidor (7 s, solo pistas reales) antes del semáforo, para que todos la vean a la vez. Los F1 son pixel art propio de perfil con los colores de cada decoración, **sin logos ni patrocinadores** (las fotos tienen derechos y marcas: no se usan).
+- Decisiones de Claude: 7 s, los 4 corriendo en carriles con los nombres encima, datos de la pista, barra de carga real (prepara los bloques de la salida) y consejos.
+
+## Banda sonora del aula (2026-09-28)
+
+Petición: "agregues estas canciones de soundtrack, te he dejado la carpeta… que vayan en orden, cuando termine uno arranca el otro". Carpeta `sountrack/` (con esa falta) en la raíz del proyecto: 6 canciones comerciales (Black Coffee, Daft Punk, Gran Turismo 3 "Light Velocity", L'Impératrice), bajadas de YouTube.
+- **No se publican** (derechos de autor): `sountrack/` y `soundtrack/` en `.gitignore` y `.vercelignore`. Solo suenan cuando el juego se sirve desde el equipo del profesor (`INICIAR.bat`, LAN). Online (Vercel) sigue el chiptune. Si el usuario pide subirlas, explicar otra vez por qué no; se pueden subir solo canciones con licencia que lo permita.
+- Orden = alfabético por nombre de archivo (el orden de la carpeta). Una sola canción a la vez; al acabar la última vuelve a la primera. En la sala se ve "SONANDO (n/6): título".
 
 ## Cuentas usadas
 

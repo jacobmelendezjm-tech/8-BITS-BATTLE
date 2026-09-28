@@ -19,16 +19,9 @@ La primera vez, Windows pedirá permiso en el firewall para Node.js: marca **Red
 ## Garaje: elige tu coche
 Nada más entrar con tu nombre se abre el garaje. El coche elegido se usa en las **pistas inventadas** y en la **arena de demolición**; en las **pistas reales a escala** todos corren con **Fórmula 1**. Se puede cambiar en la sala con **CAMBIAR COCHE** (no a mitad de carrera) y el navegador lo recuerda para la próxima vez. En la lista de pilotos se ve qué coche lleva cada uno.
 
-| Coche | Carácter | Punta | Aceleración | Manejo | Peso |
-|---|---|---|---|---|---|
-| NISSAN SKYLINE GT-R R34 | Equilibrado, tracción total | 270 km/h | 4/5 | 4/5 | 3/5 |
-| SUBARU IMPREZA WRC | Rally: el que menos pierde en hierba y barro | 259 km/h | 5/5 | 4/5 | 3/5 |
-| DODGE CHALLENGER HELLCAT | Muscle car: el más rápido, pero derrapa | 286 km/h | 5/5 | 2/5 | 5/5 |
-| TOYOTA SUPRA MK4 | Rápido y estable | 281 km/h | 3/5 | 3/5 | 3/5 |
-| VOLKSWAGEN GOLF GTI TCR | Ligero: el que mejor gira | 254 km/h | 3/5 | 5/5 | 1/5 |
+Coches: **NISSAN SKYLINE GT-R R34**, **SUBARU IMPREZA WRC**, **DODGE CHALLENGER HELLCAT**, **TOYOTA SUPRA MK4** y **VOLKSWAGEN GOLF GTI TCR**.
 
-- En las simulaciones cada coche tiene su pista: el Challenger gana en las rectas de VALLE VERDE, el Supra en COSTA SERPIENTE, el Golf en las curvas de INFIERNO y el Impreza en DEMENCIA (barro). El R34 no gana en ninguna, pero tampoco es nunca el último.
-- El **peso** cuenta en la arena: un coche pesado empuja más y sale menos despedido.
+- **Todos corren igual** (270 km/h de punta, misma aceleración, giro, agarre y peso): solo cambian el **aspecto** y el **nombre**, así nadie tiene ventaja por el coche que elige.
 - Controles del garaje: clic o toque en una tarjeta para elegir (doble clic: elegir y salir) y **¡LISTO!**. En el ordenador también **←/→** (o **A/D**) y **Enter**.
 
 ## Pistas
@@ -43,6 +36,8 @@ Todas las pistas inventadas tienen un **cruce con puente**: en una parte de la v
 
 ## Pistas reales a escala (Fórmula 1)
 Sección propia en la sala. Trazados calcados de los mapas oficiales de la F1, escalados para que la vuelta mida lo mismo que la real (5 px = 1 m), en su sentido real y con la salida en su recta de meta. Se corren con **Fórmula 1** (hasta **500 km/h** en las rectas largas) y a **2 vueltas**.
+
+Antes del semáforo sale una **pantalla de carga** de 7 s: el nombre y los datos de la pista, cuatro F1 corriendo en pixel art (**MERCEDES W14**, **FERRARI F1-75**, **RED BULL RB18** y **RENAULT R.S.19**, con los colores de sus decoraciones, sin logos) y una barra de carga mientras se prepara de verdad el trozo de pista de la salida.
 
 | Pista | País | Dificultad | Longitud real | Curvas (oficiales) | Notas |
 |---|---|---|---|---|---|
@@ -69,8 +64,11 @@ Comprobado con simulación: se puede terminar (unos 5 min a ritmo prudente sin c
 
 ## Salida, turbo y música
 - **Semáforo de 5 segundos** en la salida (carreras y arena): se enciende una luz roja por segundo y al quinto se ponen todas en verde: ¡YA!
-- **Turbo para el último** (solo carreras): si vas último y muy por detrás del coche que tienes delante, tienes turbo (más velocidad punta y aceleración, con llamas) hasta que lo alcanzas. Si te vuelves a quedar atrás, vuelve. Con el F1, la punta con turbo es de unos 540 km/h.
-- **Música de fondo**: un chiptune original de estilo metal. Se quita con el botón ♪ / **MÚSICA** o la tecla **N** (la **M** silencia todo). Para usar otra música, pon un archivo `public/music.mp3` (solo música que tengas permiso para usar: se publica en internet con el juego).
+- **Turbo para el último** (solo carreras y solo con **más de 3 pilotos**, es decir 4 o más): si vas último y **muy lejos** del coche que tienes delante (a más de ~5 segundos), tienes turbo (más velocidad punta y aceleración, con llamas) hasta que lo alcanzas. Si te vuelves a quedar atrás, vuelve. Con el F1, la punta con turbo es de unos 540 km/h.
+- **Música de fondo**: se quita con el botón ♪ / **MÚSICA** o la tecla **N** (la **M** silencia todo).
+  - **Banda sonora del aula:** si junto a `server.js` hay una carpeta `soundtrack` (o `sountrack`) con canciones (mp3, ogg, m4a, wav…), el servidor del profesor las pone **una detrás de otra**, en el orden de los nombres de archivo; al acabar la última vuelve a la primera. En la sala se ve cuál suena. Para añadir, quitar o reordenar canciones basta con cambiar los archivos de la carpeta (el orden es alfabético: se puede numerar, `01 …`, `02 …`).
+  - Esa carpeta **no se sube** a GitHub ni a Vercel (`.gitignore` y `.vercelignore`): son canciones con derechos de autor y publicarlas en internet no está permitido. Por eso en la versión online (Vercel) suena el chiptune original.
+  - Sin carpeta de banda sonora: si existe `public/music.mp3` se pone en bucle (solo música que tengas permiso para usar, porque sí se publica); si no, el chiptune original de estilo metal.
 
 ## Modo demolición (ARENA DEL CAOS)
 Se elige como una pista más (la tarjeta rosa de la sala). Arena ovalada cerrada con 4 pilares de neumáticos. En la arena los coches son un 50% más grandes que en las carreras, para que sea más fácil golpearse.
@@ -96,6 +94,7 @@ Se elige como una pista más (la tarjeta rosa de la sala). Arena ovalada cerrada
 - `server.js`: `COUNTDOWN_MS` (semáforo, 5 s), `LAPS` (vueltas), `HOST_PICK_MAX` (hasta cuántos pilotos elige el host), `VOTE_MS`, `FINISH_TIMEOUT`, `PORT`.
 - `public/tracks.js`: los puntos de cada pista, su ancho, colores y la física del coche (`PHYS`). Una pista puede tener `cliffs`, `oil`, `mud` y `pistons` (ver DEMENCIA), y definirse con `points` (curva suave) o con `corners` `[x, y, radio]` (rectas + arcos circulares).
 - `public/tracks.js` → `REAL_TRACKS` (pistas reales: puntos calcados, longitud y ancho reales en metros, escapatoria, dificultad), `REAL_LAPS` (2), `F1` (física del Fórmula 1) y `PX_PER_M` (escala).
-- `public/tracks.js` → `CARS`: los 5 coches del garaje (multiplicadores de punta, aceleración y giro sobre `PHYS`, derrape `grip`, `weight`, `offroad`, largo del dibujo y las barras de la ficha `stats`). `carPhysFor(id)` da la física de cada uno. Los dibujos están en `CAR_ART` (`client.js`).
+- `public/tracks.js` → `CARS`: los 5 coches del garaje (nombre, colores y largo del dibujo). Todos usan la física `PHYS` (`carPhysFor(id)` solo apunta el modelo). Los dibujos están en `CAR_ART` (`client.js`).
+- `public/tracks.js` → `REAL_LOADING_MS`: duración de la pantalla de carga de las pistas reales (7 s). Los F1 de esa pantalla (colores y dibujo) están en `F1_TEAMS` y `F1_SIDE` (`client.js`).
 - `public/client.js`: `TURBO` (cuánto más rápido va el último y a qué distancia se activa/desactiva) y la música (`BASS`, `LEAD`, `SONG`, `tempo`).
 - `public/tracks.js` → `DERBY`: reglas del modo demolición (vida, daño de cada golpe y velocidad a partir de la que es fuerte, botiquines, escudos, tiempo límite, tamaño de los coches en la arena `CAR_SCALE`). `ARENAS`: forma de la arena y sus pilares.

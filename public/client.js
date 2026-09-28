@@ -22,9 +22,10 @@ const isF1 = () => !!(race && race.t && race.t.phys === F1);
 const carR = () => (isF1() ? 9 : CAR_R * carScale());   // un F1 mide 5,6 x 2 m (28 x 10 px)
 const CURB = 10;                   // ancho del piano rojo/blanco
 const FALL_FRAMES = 70;            // lo que dura la caída por un acantilado (~1,2 s)
-// Turbo para el último: más punta y aceleración hasta alcanzar al de delante
-// (se activa si va más de TURBO.on muestras por detrás y se apaga a TURBO.off)
-const TURBO = { speed: 1.3, accel: 1.5, on: 25, off: 8 };
+// Turbo para el último: más punta y aceleración hasta alcanzar al de delante.
+// Solo si en la carrera hay más de 3 pilotos (minPlayers) y el último va muy lejos:
+// a más de onSec segundos del de delante, a ritmo de carrera. Se apaga al alcanzarlo (off muestras).
+const TURBO = { speed: 1.3, accel: 1.5, minPlayers: 4, onSec: 5, off: 8 };
 
 // En móviles/tablets el juego ocupa toda la pantalla y se maneja con flechas y botones táctiles
 const IS_TOUCH = matchMedia('(pointer: coarse)').matches;
@@ -187,8 +188,9 @@ const sound = {
 
 // ---------- Música de fondo ----------
 // Chiptune ORIGINAL de estilo metal (riff grave en re menor con power chords,
-// batería y melodía). Si existe public/music.mp3 se usa ese archivo en su lugar
-// (solo con música que se tenga permiso para usar).
+// batería y melodía). Si el servidor tiene banda sonora (carpeta soundtrack/ del
+// equipo del profesor) se ponen esas canciones una detrás de otra; si no, y existe
+// public/music.mp3, ese archivo en bucle (solo música que se tenga permiso para usar).
 const midi = n => 440 * Math.pow(2, (n - 69) / 12);
 const BASS = {   // 16 semicorcheas por compás; 0 = silencio
   A1: [38, 0, 38, 38, 0, 38, 0, 41, 38, 0, 38, 38, 0, 43, 0, 41],
@@ -212,6 +214,7 @@ const SNARE = [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0];
 const music = {
   enabled: store.get('8bits-racing.music') !== '0',
   out: null, noise: null, timer: null, step: 0, next: 0, audio: null, tempo: 150,
+  playlist: null, track: 0, fails: 0,
   start() {
     const ac = sound.ctx;
     if (!ac || this.out) return;
@@ -221,13 +224,16 @@ const music = {
     const d = buf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     this.noise = buf;
-    // ¿Hay una música propia en public/music.mp3?
-    fetch('music.mp3', { method: 'HEAD' }).then(r => {
-      if (r.ok && (r.headers.get('content-type') || '').includes('audio')) {
-        this.audio = new Audio('music.mp3');
-        this.audio.loop = true;
-        this.audio.volume = 0.4;
-      }
+    // ¿Hay banda sonora en el servidor? Si no, ¿una música propia en public/music.mp3?
+    fetch('soundtrack.json').then(r => (r.ok ? r.json() : [])).catch(() => []).then(list => {
+      if (Array.isArray(list) && list.length) return this.usePlaylist(list);
+      return fetch('music.mp3', { method: 'HEAD' }).then(r => {
+        if (r.ok && (r.headers.get('content-type') || '').includes('audio')) {
+          this.audio = new Audio('music.mp3');
+          this.audio.loop = true;
+          this.audio.volume = 0.4;
+        }
+      });
     }).catch(() => {}).finally(() => {
       if (!this.audio) {
         this.next = ac.currentTime + 0.1;
@@ -235,6 +241,24 @@ const music = {
       }
       this.apply();
     });
+  },
+  // Banda sonora: un solo reproductor; al acabar una canción empieza la siguiente
+  // (y después de la última, otra vez la primera)
+  usePlaylist(list) {
+    this.playlist = list;
+    this.track = 0;
+    this.audio = new Audio(list[0].url);
+    this.audio.volume = 0.4;
+    this.audio.addEventListener('ended', () => this.nextTrack());
+    this.audio.addEventListener('playing', () => { this.fails = 0; });
+    this.audio.addEventListener('error', () => {           // archivo que no se puede leer: la siguiente
+      if (++this.fails < this.playlist.length) this.nextTrack();
+    });
+  },
+  nextTrack() {
+    this.track = (this.track + 1) % this.playlist.length;
+    this.audio.src = this.playlist[this.track].url;
+    this.apply();
   },
   apply() {
     const on = this.enabled && !sound.muted;
@@ -245,7 +269,13 @@ const music = {
       if (b) {
         b.classList.toggle('off', !this.enabled);
         b.querySelector('.mlabel').textContent = this.enabled ? 'MÚSICA: SÍ' : 'MÚSICA: NO';
+        b.title = this.playlist ? `SONANDO: ${this.playlist[this.track].title}` : '';
       }
+    }
+    const np = $('nowPlaying');
+    if (np) {
+      np.hidden = !this.playlist;
+      if (this.playlist) np.textContent = `${on ? '♪ SONANDO' : 'EN PAUSA'} (${this.track + 1}/${this.playlist.length}): ${this.playlist[this.track].title}`;
     }
   },
   toggle() {
@@ -1131,11 +1161,8 @@ function collideRemote(car, others, derby) {
     if (derby) {
       const rel = (car.vx - (o.vx || 0)) * nx + (car.vy - (o.vy || 0)) * ny;
       if (rel < 0) {
-        // cuanto más pesa el otro respecto a mí, más me empuja (a igual peso, 0,65)
-        const mMe = (car.phys && car.phys.weight) || 1, mO = o.weight || 1;
-        const k = 1.3 * mO / (mMe + mO);
-        car.vx -= k * rel * nx;
-        car.vy -= k * rel * ny;
+        car.vx -= 0.65 * rel * nx;                   // todos los coches pesan lo mismo
+        car.vy -= 0.65 * rel * ny;
       }
       // Solo cuenta como golpe nuevo si antes estabais separados: empujar
       // pegado a otro coche no le quita vida sin parar
@@ -1294,7 +1321,7 @@ function update() {
   if (shake > 0) shake *= 0.85;
   if (shake < 0.2) shake = 0;
 
-  sound.setEngine(car ? car.fwd : 0, !!car && snap.ph !== 'ended');
+  sound.setEngine(car ? car.fwd : 0, !!car && snap.ph !== 'ended' && snap.ph !== 'loading');
 
   // Enviar mi posición (30 veces por segundo)
   if (car && r.frame % 2 === 0 && (snap.ph === 'countdown' || snap.ph === 'playing')) {
@@ -1316,11 +1343,12 @@ function lightsOn() {
 function updateTurbo(r, car) {
   const prev = car.turbo;
   const others = r.order.filter(o => !o.me);
-  const last = r.order.length > 1 && r.order[r.order.length - 1].me;
+  const last = r.order.length >= TURBO.minPlayers && r.order[r.order.length - 1].me;
   if (car.finished || !others.length || !last) car.turbo = false;
   else {
     const gap = Math.min(...others.map(o => o.progress)) - car.progress;   // muestras hasta el de delante
-    if (!car.turbo && gap > TURBO.on) car.turbo = true;
+    const pace = car.phys.maxSpeed * 0.75 * 60 / SAMPLE_DS;                // muestras por segundo a ritmo de carrera
+    if (!car.turbo && gap > TURBO.onSec * pace) car.turbo = true;
     else if (car.turbo && gap < TURBO.off) car.turbo = false;
   }
   if (car.turbo && !prev) {
@@ -1539,6 +1567,227 @@ function drawF1Body(c, car) {
   c.fillRect(-15, -6, 3, 12);
 }
 
+// ---------- Pantalla de carga de las pistas reales: los F1 de perfil ----------
+// Pixel art de 72 × 17 mirando a la derecha. Cada tramo: [fila, x1, x2, zona]; los últimos tapan a los primeros.
+// Zonas: W alerón trasero, w su franja, K carbono, B carrocería, b carrocería baja,
+// S franja lateral, E toma de aire, H casco, V visera, N punta del morro, F alerón delantero, f su franja.
+const F1_SIDE = [
+  // alerón trasero y su soporte
+  [0, 1, 10, 'w'], [1, 0, 10, 'W'], [2, 0, 10, 'W'], [3, 0, 9, 'K'], [4, 0, 9, 'W'], [5, 1, 8, 'W'], [6, 2, 6, 'W'],
+  [7, 4, 6, 'K'], [8, 4, 6, 'K'],
+  // difusor y caja de cambios (casi tapados por la rueda)
+  [9, 0, 15, 'K'], [10, 0, 15, 'K'], [11, 1, 15, 'K'], [12, 2, 15, 'K'],
+  // tapa del motor, subiendo hasta la toma de aire
+  [4, 30, 32, 'B'], [5, 26, 37, 'B'], [6, 22, 48, 'B'], [7, 18, 52, 'B'], [8, 14, 56, 'B'],
+  [9, 14, 60, 'B'], [10, 14, 64, 'B'], [11, 14, 67, 'B'], [12, 14, 67, 'b'], [13, 18, 54, 'b'],
+  // toma de aire sobre el piloto
+  [1, 34, 36, 'E'], [2, 33, 37, 'E'], [3, 33, 37, 'E'], [4, 33, 37, 'E'], [2, 37, 37, 'K'], [3, 37, 37, 'K'],
+  // piloto y halo
+  [4, 38, 40, 'H'], [5, 38, 40, 'H'], [5, 41, 41, 'V'], [4, 41, 41, 'V'],
+  [3, 37, 44, 'K'], [4, 44, 45, 'K'], [5, 45, 45, 'K'],
+  // entrada de aire del pontón, franja lateral y punta del morro
+  [8, 42, 43, 'K'], [9, 42, 43, 'K'], [10, 43, 43, 'K'],
+  [10, 16, 41, 'S'], [11, 16, 41, 'S'], [11, 45, 58, 'S'],
+  [10, 61, 64, 'N'], [11, 60, 67, 'N'], [12, 58, 67, 'N'],
+  // suelo
+  [14, 14, 56, 'K'],
+  // alerón delantero
+  [13, 62, 69, 'f'], [14, 58, 71, 'F'], [15, 60, 71, 'F'],
+  [11, 69, 71, 'F'], [12, 69, 71, 'F'], [13, 70, 71, 'F'],
+];
+const F1_W = 72, F1_H = 17, F1_WHEELS = [11, 57];           // centros de las ruedas (y = 11)
+
+// Los 4 F1 de la pantalla de carga: colores de su decoración (sin logos ni patrocinadores)
+const F1_TEAMS = [
+  { id: 'merc', name: 'MERCEDES W14', label: '#00d2be',
+    pal: { B: '#26282f', b: '#16171b', S: '#00d2be', E: '#26282f', N: '#26282f', W: '#26282f', w: '#00d2be', F: '#26282f', f: '#00d2be', H: '#ffd23f' },
+    rim: '#2bd47d', stripe: '#eeeeee' },
+  { id: 'ferrari', name: 'FERRARI F1-75', label: '#ff2a2a',
+    pal: { B: '#d8000f', b: '#1a1a1a', S: '#d8000f', E: '#d8000f', N: '#d8000f', W: '#1a1a1a', w: '#d8000f', F: '#d8000f', f: '#1a1a1a', H: '#f4f4f4' },
+    rim: '#d7e800', stripe: '#ffd800' },
+  { id: 'redbull', name: 'RED BULL RB18', label: '#ffc906',
+    pal: { B: '#1f2b52', b: '#172142', S: '#e2233b', E: '#ffc906', N: '#ffc906', W: '#1f2b52', w: '#e2233b', F: '#1f2b52', f: '#e2233b', H: '#f4f4f4' },
+    rim: '#1f2b52', rimRing: '#e2233b', stripe: '#e2233b' },
+  { id: 'renault', name: 'RENAULT R.S.19', label: '#ffe100',
+    pal: { B: '#161616', b: '#0d0d0d', S: '#161616', E: '#ffe100', N: '#ffe100', W: '#161616', w: '#ffe100', F: '#ffe100', f: '#161616', H: '#f4f4f4' },
+    // la mitad delantera y el lomo de la tapa del motor, amarillos
+    paint: [[6, 38, 67, '#ffe100'], [7, 44, 67, '#ffe100'], [8, 46, 67, '#ffe100'], [9, 47, 67, '#ffe100'], [10, 48, 67, '#ffe100'], [11, 48, 67, '#ffe100'],
+      [4, 30, 32, '#ffe100'], [5, 26, 32, '#ffe100'], [6, 22, 30, '#ffe100']],
+    rim: '#2a2a2a', stripe: '#ffd800' },
+];
+
+function shadeHex(hex, k) {     // k > 0 aclara, k < 0 oscurece
+  const n = parseInt(hex.slice(1), 16);
+  const ch = s => { const v = (n >> s) & 255; return Math.round(k > 0 ? v + (255 - v) * k : v * (1 + k)); };
+  return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
+}
+
+// Carrocería pre-dibujada (sin ruedas), con brillo en el borde de arriba
+const f1SideCache = new Map();
+function f1SideSprite(tm) {
+  if (f1SideCache.has(tm.id)) return f1SideCache.get(tm.id);
+  const zone = Array.from({ length: F1_H }, () => new Array(F1_W).fill(null));
+  const col = Array.from({ length: F1_H }, () => new Array(F1_W).fill(null));
+  const pal = { K: '#0b0b0e', V: '#101014', ...tm.pal };
+  for (const [y, x1, x2, z] of F1_SIDE) for (let x = x1; x <= x2; x++) { zone[y][x] = z; col[y][x] = pal[z]; }
+  for (const [y, x1, x2, c] of tm.paint || []) for (let x = x1; x <= x2; x++) if ('BbSN'.includes(zone[y][x])) col[y][x] = c;
+  const cv = document.createElement('canvas');
+  cv.width = F1_W; cv.height = F1_H;
+  const c = cv.getContext('2d');
+  for (let y = 0; y < F1_H; y++) for (let x = 0; x < F1_W; x++) {
+    if (!col[y][x]) continue;
+    const z = zone[y][x], up = y > 0 ? zone[y - 1][x] : null;
+    const edge = z !== 'K' && z !== 'V' && (!up || up === 'K');
+    c.fillStyle = edge ? shadeHex(col[y][x], 0.35) : col[y][x];
+    c.fillRect(x, y, 1, 1);
+  }
+  f1SideCache.set(tm.id, cv);
+  return cv;
+}
+
+// Rueda de 11 × 11 con su franja de compuesto; 4 fotogramas para que parezca que gira
+const f1WheelCache = new Map();
+function f1WheelSprite(tm, frame) {
+  const key = tm.id + (frame & 3);
+  if (f1WheelCache.has(key)) return f1WheelCache.get(key);
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 11;
+  const c = cv.getContext('2d');
+  const rot = (frame & 3) * Math.PI / 8;
+  for (let j = 0; j < 11; j++) for (let i = 0; i < 11; i++) {
+    const dx = i + 0.5 - 5.5, dy = j + 0.5 - 5.5, d = Math.hypot(dx, dy);
+    if (d > 5.6) continue;
+    const a = (Math.atan2(dy, dx) + rot + Math.PI * 4) % (Math.PI / 2);
+    let color;
+    if (d > 4.7) color = '#141418';                                   // banda de rodadura
+    else if (d > 3.8) color = a < 0.5 ? '#141418' : tm.stripe;        // franja del compuesto, con cortes que giran
+    else if (d > 2.9) color = '#1e1e24';                              // flanco
+    else if (d > 2.1 && tm.rimRing) color = tm.rimRing;
+    else if (d > 1.0) color = tm.rim;                                 // tapacubos
+    else color = '#9a9aa4';                                           // tuerca
+    c.fillStyle = color;
+    c.fillRect(i, j, 1, 1);
+  }
+  f1WheelCache.set(key, cv);
+  return cv;
+}
+
+// Dibuja el F1 con la esquina de arriba a la izquierda en (x, y), ampliado S veces
+function drawF1Side(c, tm, x, y, S, frame) {
+  c.imageSmoothingEnabled = false;
+  c.fillStyle = 'rgba(0,0,0,.45)';                                     // sombra en el suelo
+  c.fillRect(x + 2 * S, y + (F1_H - 0.5) * S, (F1_W - 3) * S, S);
+  c.drawImage(f1SideSprite(tm), x, y, F1_W * S, F1_H * S);
+  for (const wx of F1_WHEELS) c.drawImage(f1WheelSprite(tm, frame), x + (wx - 5.5) * S, y + 5.5 * S, 11 * S, 11 * S);
+}
+
+// Alto (en píxeles de la vista) que tapan los botones de arriba (FIN, música, pantalla completa)
+function topBarBottom() {
+  if (!document.body.classList.contains('fill')) return 0;
+  const b = document.querySelector('.gamebar').getBoundingClientRect(), cr = canvas.getBoundingClientRect();
+  return cr.height ? Math.max(0, (b.bottom - cr.top) * VIEW_H / cr.height) : 0;
+}
+
+// Mientras se ve la pantalla de carga se preparan de verdad los bloques de pista
+// que se verán en la salida. Devuelve la fracción lista (0-1).
+function warmTiles(r) {
+  const g = r.gfx;
+  if (!g.tiles) return 1;
+  g.budget = 3;
+  const cx = Math.max(0, Math.min(g.w - VIEW_W, r.cam.x - VIEW_W / 2 - g.ox));
+  const cy = Math.max(0, Math.min(g.h - VIEW_H, r.cam.y - VIEW_H / 2 - g.oy));
+  const mx = Math.floor((g.w - 1) / TILE), my = Math.floor((g.h - 1) / TILE);
+  const x0 = Math.max(0, Math.floor(cx / TILE) - 1), x1 = Math.min(mx, Math.floor((cx + VIEW_W) / TILE) + 1);
+  const y0 = Math.max(0, Math.floor(cy / TILE) - 1), y1 = Math.min(my, Math.floor((cy + VIEW_H) / TILE) + 1);
+  let ready = 0, total = 0;
+  for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) { total++; if (getTile(g, tx, ty)) ready++; }
+  return total ? ready / total : 1;
+}
+
+const LOAD_TIPS = [
+  'FRENA ANTES DE LAS CURVAS: A 500 KM/H LLEGAN ENSEGUIDA',
+  'LAS PISTAS MIDEN LO MISMO QUE LAS DE VERDAD',
+  'CON 4 PILOTOS O MÁS, EL ÚLTIMO TIENE TURBO SI SE QUEDA MUY ATRÁS',
+  'EN SUZUKA HAY UN PUENTE: EL DE ARRIBA Y EL DE ABAJO NO CHOCAN',
+  'EN BAKÚ HAY MUROS: NO HAY ESCAPATORIA',
+  'FUERA DEL ASFALTO EL F1 NO PASA DE 130 KM/H',
+];
+
+function drawLoading(r) {
+  const def = r.t.def, f = r.frame, low = VIEW_H < 560;
+  const cxv = VIEW_W / 2, maxW = VIEW_W - 24;
+  const prog = Math.max(0, Math.min(1 - snap.left / REAL_LOADING_MS, warmTiles(r)));
+
+  // Fondo con estelas de velocidad
+  ctx.fillStyle = '#0b0b14';
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  for (let i = 0; i < 46; i++) {
+    const len = 24 + (i * 37) % 90, y = Math.round((i * 97.3 + 13) % VIEW_H);
+    const x = VIEW_W - ((f * (8 + (i % 5) * 4) + i * 211) % (VIEW_W + len));
+    ctx.fillStyle = i % 3 ? 'rgba(255,255,255,.07)' : 'rgba(41,173,255,.16)';
+    ctx.fillRect(Math.round(x), y, len, 2);
+  }
+
+  // Cabecera: sección, nombre de la pista y datos
+  let y = Math.max(topBarBottom() + 8, low ? 12 : 22);
+  const head = r.banner && r.frame < r.banner.until ? r.banner.text : 'PISTAS REALES A ESCALA · FÓRMULA 1';
+  text(head, cxv, y, low ? 8 : 10, '#ffec27', 'center', maxW); y += low ? 16 : 22;
+  text(def.name, cxv, y, low ? 20 : 28, def.color, 'center', maxW); y += low ? 30 : 42;
+  text(`${def.country} · ${(def.lengthM / 1000).toFixed(3).replace('.', ',')} KM · ${def.turns} CURVAS · ${r.laps} VUELTAS`,
+    cxv, y, low ? 8 : 10, '#fff1e8', 'center', maxW);
+  y += low ? 18 : 26;
+
+  // Pie: barra de carga y consejo
+  const tipY = VIEW_H - (low ? 16 : 28), barH = low ? 10 : 14;
+  const barY = tipY - (low ? 16 : 24) - barH, labY = barY - (low ? 14 : 20);
+
+  // Asfalto con los F1: 4 carriles (o 2 carriles con 2 coches si la pantalla es ancha y baja)
+  const roadTop = y, roadBot = labY - (low ? 8 : 14), roadH = roadBot - roadTop;
+  const inTop = roadTop + 8, inH = roadH - 16;                 // carriles sin pisar los pianos
+  const lab = low ? 8 : 10;
+  const fitS = (lanes, frac) => Math.max(1, Math.min(6, Math.floor((inH / lanes - lab - 12) / F1_H), Math.floor(VIEW_W * frac / F1_W)));
+  const s4 = fitS(4, VIEW_W < 760 ? 0.75 : 0.42), s2 = fitS(2, 0.36);
+  const lanes = s2 > s4 ? 2 : 4, S = Math.max(s2, s4), laneH = inH / lanes;
+  ctx.fillStyle = '#2b2b34';
+  ctx.fillRect(0, roadTop, VIEW_W, roadH);
+  const run = (f * 16) % 64;                                 // la pista corre hacia la izquierda
+  for (const ky of [roadTop, roadBot - 6]) {                 // pianos
+    for (let x = -run; x < VIEW_W; x += 64) {
+      ctx.fillStyle = '#ff004d'; ctx.fillRect(x, ky, 32, 6);
+      ctx.fillStyle = '#fff1e8'; ctx.fillRect(x + 32, ky, 32, 6);
+    }
+  }
+  ctx.fillStyle = 'rgba(255,241,232,.55)';                   // líneas entre carriles
+  for (let k = 1; k < lanes; k++) {
+    const ly = Math.round(inTop + k * laneH) - 1;
+    for (let x = -((f * 16) % 80); x < VIEW_W; x += 80) ctx.fillRect(x, ly, 40, 3);
+  }
+  const carW = F1_W * S, carH = F1_H * S;
+  F1_TEAMS.forEach((tm, i) => {
+    const lane = lanes === 4 ? i : i >> 1;
+    const slot = lanes === 4 ? 0.5 : (i & 1 ? 0.27 : 0.73);  // con 2 carriles: uno delante y otro detrás
+    const amp = lanes === 4 ? Math.max(0, (VIEW_W - carW) / 2 - 16) * 0.55 : VIEW_W * 0.05;
+    let x = VIEW_W * slot - carW / 2 + amp * Math.sin(f * 0.017 * (1 + i * 0.23) + i * 1.9);
+    const intro = Math.min(1, Math.max(0, (f - i * 9) / 50));             // entran desde la izquierda
+    x -= (1 - (1 - Math.pow(1 - intro, 3))) * (x + carW + 40);
+    const cy = Math.round(inTop + lane * laneH + (laneH - carH - lab - 6) / 2 + lab + 6) + (((f >> 2) + i) % 3 === 0 ? 1 : 0);
+    ctx.fillStyle = 'rgba(255,255,255,.22)';                 // estela
+    for (let k = 0; k < 3; k++) ctx.fillRect(Math.round(x - 24 - k * 22 - (f * 6 + k * 9) % 18), cy + Math.round((6 + k * 3) * S), 18, Math.max(1, S >> 1));
+    drawF1Side(ctx, tm, Math.round(x), cy, S, (f >> 1) + i);
+    text(tm.name, Math.round(x + carW / 2), cy - lab - 5, lab, tm.label, 'center');
+  });
+
+  // Barra de carga
+  const bw = Math.min(560, VIEW_W - 48), bx = Math.round(cxv - bw / 2);
+  text(prog >= 1 ? '¡LISTO!' : `CARGANDO PISTA${'.'.repeat(1 + ((f >> 4) % 3))}  ${Math.round(prog * 100)}%`, cxv, labY, low ? 8 : 10, '#fff1e8', 'center', maxW);
+  ctx.fillStyle = '#000'; ctx.fillRect(bx - 3, barY - 3, bw + 6, barH + 6);
+  ctx.fillStyle = '#1d2b53'; ctx.fillRect(bx, barY, bw, barH);
+  ctx.fillStyle = '#00e436';
+  const fillW = Math.round(bw * prog);
+  for (let x = 0; x + 10 <= fillW; x += 14) ctx.fillRect(bx + x + 2, barY + 2, 10, barH - 4);
+  text(`CONSEJO: ${LOAD_TIPS[r.rid % LOAD_TIPS.length]}`, cxv, tipY, low ? 7 : 9, '#c2c3c7', 'center', maxW);
+}
+
 function box(x, y, w, h) {
   ctx.fillStyle = 'rgba(29,43,83,.88)';
   ctx.fillRect(x, y, w, h);
@@ -1563,6 +1812,7 @@ function text(str, x, y, size, color = '#fff1e8', align = 'left', maxW = 0) {
 
 function draw() {
   const r = race, g = r.gfx;
+  if (snap.ph === 'loading') { drawLoading(r); return; }    // pistas reales: pantalla de carga con los F1
 
   // Cámara limitada al mapa
   const clampX = v => Math.round(Math.max(0, Math.min(g.w - VIEW_W, v)));
@@ -2191,7 +2441,6 @@ function buildGarage() {
       <canvas width="240" height="130"></canvas>
       <span class="cname">${m.name}</span>
       <span class="cdesc">${m.desc}</span>
-      ${CAR_STATS.map((lbl, i) => `<span class="cstat"><span>${lbl}</span><span class="pips">${[1, 2, 3, 4, 5].map(k => `<i class="${k <= m.stats[i] ? 'on' : ''}"></i>`).join('')}</span></span>`).join('')}
       <span class="csel">ELEGIDO</span>`;
     drawCarPreview(b.querySelector('canvas'), m.id);
     b.addEventListener('click', () => chooseCar(m.id));
@@ -2252,7 +2501,7 @@ function showScreen(id) {
 
 function onSnapshot(s) {
   snap = s;
-  const inRace = s.ph === 'countdown' || s.ph === 'playing' || s.ph === 'ended';
+  const inRace = s.ph === 'loading' || s.ph === 'countdown' || s.ph === 'playing' || s.ph === 'ended';
 
   if (inRace && (!race || race.rid !== s.rid)) setupRace(s);
   if (!inRace) {
@@ -2291,7 +2540,7 @@ function onSnapshot(s) {
         race.remotes.set(p.id, o);
       }
       o.fl = !!p.fl;                                              // cayendo por un acantilado
-      if (!isF1()) { o.model = carById(p.car).id; o.weight = carPhysFor(p.car).weight; }
+      if (!isF1()) o.model = carById(p.car).id;
       if (race.t.crossings && race.t.crossings.length) o.lvl = levelAt(race.t, ((Math.round(p.pg) % race.t.N) + race.t.N) % race.t.N);
       o.tb = !!p.tb;                                              // con turbo
       o.vx = (p.x - (o.tx ?? p.x)) / 2;
@@ -2319,6 +2568,7 @@ function onSnapshot(s) {
   }
   document.body.classList.toggle('results', !$('results').hidden);
   document.body.classList.toggle('spectator', !(race && race.car));
+  document.body.classList.toggle('loading', s.ph === 'loading');
 }
 
 // Eventos del modo demolición: daño, bloqueos, curas, escudos, K.O. y objetos nuevos

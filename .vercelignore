@@ -1,8 +1,3 @@
-node_modules/
-.claude/settings.local.json
-
-.vercel
-.env*
 # Banda sonora local (canciones con derechos de autor): no se publica
 soundtrack/
 sountrack/

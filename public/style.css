@@ -194,10 +194,6 @@ button.secondary { background: #065ab5; box-shadow: inset -4px -4px 0 #1d2b53, 4
 .carcard canvas { width: 100%; height: auto; image-rendering: pixelated; border: 2px solid #000; }
 .carcard .cname { font-size: 10px; line-height: 1.5; }
 .carcard .cdesc { font-size: 8px; line-height: 1.6; color: var(--accent); }
-.cstat { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 7px; color: var(--dim); }
-.pips { display: inline-flex; gap: 3px; flex: none; }
-.pips i { width: 10px; height: 8px; background: #16161a; box-shadow: 0 0 0 1px #000; }
-.pips i.on { background: var(--green); }
 .carcard .csel {
   display: none;
   position: absolute; top: 16px; right: 16px;
@@ -211,8 +207,6 @@ button.secondary { background: #065ab5; box-shadow: inset -4px -4px 0 #1d2b53, 4
   .carcard { padding: 7px; gap: 5px; }
   .carcard .cname { font-size: 8px; }
   .carcard .cdesc { font-size: 7px; }
-  .cstat { font-size: 6px; }
-  .pips i { width: 7px; height: 6px; }
   .carcard .csel { top: 10px; right: 10px; font-size: 6px; padding: 3px 4px; }
 }
 /* Pantallas bajas (móvil en horizontal): todo más compacto; con anchura, los 5 coches en fila */
@@ -224,9 +218,6 @@ button.secondary { background: #065ab5; box-shadow: inset -4px -4px 0 #1d2b53, 4
   .carcard { padding: 6px; gap: 4px; }
   .carcard .cname { font-size: 7px; }
   .carcard .cdesc { font-size: 6px; }
-  .cstat { font-size: 6px; }
-  .pips { gap: 2px; }
-  .pips i { width: 6px; height: 5px; }
   .carcard .csel { top: 9px; right: 9px; font-size: 6px; padding: 3px 4px; }
 }
 @media (max-height: 520px) and (min-width: 740px) {
@@ -311,6 +302,7 @@ ul { list-style: none; margin: 8px 0 0; padding: 0; font-size: 10px; }
 
 .tiny { font-size: 8px; color: var(--dim); text-align: center; }
 .tiny.left { text-align: left; margin: 0; line-height: 1.8; }
+.now-playing { color: var(--line); overflow-wrap: anywhere; }
 
 /* ---- Carrera ---- */
 #game { display: flex; flex-direction: column; align-items: center; gap: 12px; }
@@ -441,7 +433,9 @@ body.touch .btn-fs svg { width: 16px; height: 16px; }
 body.touch.results .dpad,
 body.touch.results .pads,
 body.touch.spectator .dpad,
-body.touch.spectator .pads { display: none !important; }
+body.touch.spectator .pads,
+body.touch.loading .dpad,
+body.touch.loading .pads { display: none !important; }
 
 /* Flechas ← → estilo PlayStation (izquierda) */
 .dpad {

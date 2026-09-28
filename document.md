@@ -19,12 +19,13 @@ Así la conducción es inmediata aunque haya latencia (importante en el modo onl
 ## 3. Fases de la partida (servidor)
 
 ```
-lobby ──(host elige, ≤2 pilotos)──────────────► countdown (5 s) ──► playing ──► ended (12 s) ──► lobby
-  └──(host abre votación, ≥3 pilotos)──► voting (15 s o todos votan) ─┘
+lobby ──(host elige, ≤2 pilotos)──────────────► [loading (7 s)] ──► countdown (5 s) ──► playing ──► ended (12 s) ──► lobby
+  └──(host abre votación, ≥3 pilotos)──► voting (15 s o todos votan) ─┘   (loading solo en pistas reales)
 ```
 
 - **lobby**: los pilotos entran con su nombre. Con 1-2 pilotos el host hace clic en una pista (`pick`). Con 3 o más, el host abre la votación (`voteStart`).
 - **voting**: cada piloto vota (`vote`, puede cambiarlo). Se cierra a los 15 s o cuando han votado todos. Gana la más votada; empates → sorteo. Si durante la votación quedan 2 pilotos o menos, se vuelve a `lobby` para que elija el host.
+- **loading** (solo pistas reales, `REAL_LOADING_MS` = 7 s, en `tracks.js` para que lo compartan servidor y cliente): la parrilla ya está asignada; el cliente ya ha creado la carrera y dibuja la pantalla de carga (`drawLoading`) en lugar de la pista. Mientras, `warmTiles` genera de verdad los bloques de pista que se ven en la salida (y un anillo alrededor); la barra muestra el mínimo entre el tiempo transcurrido y los bloques listos. Los coches no se mueven ni se envía `st` (el servidor lo rechaza fuera de countdown/playing). Los controles táctiles se ocultan (clase `loading` del `<body>`).
 - **countdown**: el servidor asigna a cada piloto una casilla de la parrilla (orden aleatorio). El cliente muestra el nombre de la pista y el semáforo.
 - **playing**: cada cliente conduce y cuenta sus vueltas. Al completar sus vueltas (4, o 2 en pistas reales) manda `fin`; el servidor guarda el tiempo y el puesto. Termina cuando todos llegan o 45 s después del primero.
 - **ended**: tabla de resultados; los que no terminaron se ordenan por distancia recorrida.
@@ -54,6 +55,8 @@ La dificultad sube con el número de curvas, lo cerradas que son y el ancho de l
 - **F1** (`F1` en `tracks.js`): punta 11,6 px/frame (500 km/h reales con `kmh = 43,2`), aceleración que cae al acercarse a la punta (`falloff`), frenada 0,12 px/frame² (~5 g), agarre lateral 0,08 px/frame² (~6 g): `turnRateFor` limita el giro a `latAcc / v`. `stepCar` usa `car.phys` (kart o F1) para todo.
 - **Vueltas:** el servidor usa `raceLaps` = 2 en pistas reales (4 en el resto) y lo manda en la instantánea (`nl`).
 
+- **Pantalla de carga:** 4 F1 de perfil en pixel art de 72 × 17 (`F1_SIDE`: tramos `[fila, x1, x2, zona]`; `F1_TEAMS`: colores de cada zona y retoques `paint`). Se pre-dibujan una vez (`f1SideSprite`, con brillo automático en el borde de arriba) y las ruedas son sprites de 11 × 11 con 4 fotogramas para que giren (`f1WheelSprite`). `drawLoading` elige 4 carriles (1 coche por carril) o, en pantallas anchas y bajas (móvil en horizontal), 2 carriles con 2 coches, según lo que deje los coches más grandes. `topBarBottom()` mide lo que tapan los botones de arriba para empezar el texto debajo.
+
 ### 4.1c Cruces con puente y pasarelas
 
 - `buildTrack` detecta los cruces: pares de muestras lejanas en la vuelta cuyos ejes se cortan. El tramo de arriba es el más cercano al punto `def.over`; `B` = muestras a cada lado que ocupa el puente (según ancho, escapatoria y ángulo del cruce).
@@ -72,8 +75,8 @@ Además de `points` (spline Catmull-Rom, curvas suaves pero con el radio variand
 ### 4.3 Salida, turbo y música
 
 - **Semáforo:** `COUNTDOWN_MS = 5000` en el servidor; el cliente enciende `lightsOn()` = 1..5 luces rojas según `snap.left` y las pone verdes al pasar a `playing` (`drawTrafficLight`).
-- **Turbo del último** (`updateTurbo`, solo carreras): si mi coche es el último y va más de `TURBO.on` muestras por detrás del de delante, `car.turbo` multiplica la velocidad punta (×1,3) y la aceleración (×1,5) en `stepCar`; se apaga a menos de `TURBO.off` muestras o al dejar de ser último. Se revisa en cada frame, también durante una caída. Se envía `tb` para que los demás vean las llamas.
-- **Música** (`music` en `client.js`): chiptune original programado con Web Audio (secuenciador de semicorcheas con anticipación de 120 ms: bajo con quinta, melodía, bombo, caja y charles). Si el servidor tiene `public/music.mp3`, se reproduce ese archivo en bucle en su lugar (el servidor devuelve 404 si no existe). Se guarda en `localStorage` si está activada.
+- **Turbo del último** (`updateTurbo`, solo carreras): si en la carrera hay al menos `TURBO.minPlayers` = 4 pilotos, mi coche es el último y va a más de `TURBO.onSec` = 5 s del de delante (el hueco en muestras se pasa a segundos con el ritmo de carrera: `0,75 · maxSpeed` de mi coche, así vale igual para karts y F1), `car.turbo` multiplica la velocidad punta (×1,3) y la aceleración (×1,5) en `stepCar`; se apaga a menos de `TURBO.off` muestras o al dejar de ser último. Se revisa en cada frame, también durante una caída. Se envía `tb` para que los demás vean las llamas.
+- **Música** (`music` en `client.js`): chiptune original programado con Web Audio (secuenciador de semicorcheas con anticipación de 120 ms: bajo con quinta, melodía, bombo, caja y charles). Orden de preferencia al arrancar: (1) **banda sonora** del servidor: `GET /soundtrack.json` devuelve `[{ title, url }]` con los audios de la carpeta `soundtrack/` o `sountrack/` (orden alfabético, `localeCompare` en español; `songTitle` quita la extensión, "(Official Video)" y el canal del final). `usePlaylist` usa **un solo** `Audio`: en `ended` pasa a la siguiente (`nextTrack`, y de la última a la primera); si un archivo falla, salta al siguiente. `GET /soundtrack/<nombre>` solo sirve archivos de esa lista y acepta rangos (`206`, lo necesita Safari de iPhone). La carpeta está en `.gitignore` y `.vercelignore`, así que en Vercel/Render la petición da 404 y se pasa a (2) `public/music.mp3` en bucle, si existe (el servidor devuelve 404 si no), o (3) el chiptune. Se guarda en `localStorage` si está activada.
 
 ### 4.4 Peligros de pista (DEMENCIA)
 
@@ -108,12 +111,11 @@ Una pista puede definir `cliffs`, `oil`, `mud` y `pistons`. Se colocan con el í
 
 ## 4d. Garaje y coches
 
-- **`CARS`** (`tracks.js`): 5 coches (R34, Impreza WRC, Challenger, Supra, Golf) con multiplicadores sobre `PHYS` (`speed`, `accel`, `turn`), `grip` (fracción de la velocidad lateral que se conserva en cada frame: más alto = derrapa más; Challenger 0,86, Golf 0,75), `weight`, `offroad` (WRC: en hierba y barro llega más rápido y frena menos: `grassMax` ×1,35, `grassAccel`, `grassDrag`), `len` (largo del dibujo) y `stats` (barras de la ficha, 1-5). `carPhysFor(id)` devuelve el objeto de física completo con `model`.
-- **Dónde se usan:** `makeCar(t, g, color, model)` usa `F1` en las pistas reales y `carPhysFor(model)` en las inventadas; `makeDerbyCar` usa `carPhysFor(model)` (más `DERBY.CAR_SCALE`). El peso solo cuenta en la arena: al empujar, `k = 1,3 · m_otro / (m_mío + m_otro)` (a igual peso 0,65, como antes).
+- **`CARS`** (`tracks.js`): 5 coches (R34, Impreza WRC, Challenger, Supra, Golf) con `name`, `short`, `desc` (sus colores) y `len` (largo del dibujo). **Todos corren igual**: `carPhysFor(id)` devuelve `PHYS` más `model`; el radio de choque también es el mismo. (Hubo una versión con punta, aceleración, giro, derrape y peso distintos por coche; el usuario la quitó porque daba ventajas.)
+- **Dónde se usan:** `makeCar(t, g, color, model)` usa `F1` en las pistas reales y `carPhysFor(model)` en las inventadas; `makeDerbyCar` usa `carPhysFor(model)` (más `DERBY.CAR_SCALE`).
 - **Servidor:** `p.car` se valida con `validCar` (si no es válido, el primero). Llega en `join` y en el mensaje `car` (solo unido y fuera de carrera) y va en la instantánea de cada piloto (`car`). Los demás navegadores dibujan cada coche remoto con su modelo y usan su peso en los choques.
 - **Pantallas** (`onSnapshot`): sin nombre → entrada; tras el primer `joined` de la conexión → garaje (`garageOpen`); si hay carrera y yo corro en ella → carrera (cierra el garaje); garaje abierto → garaje (quien está en el garaje no entra a mirar una carrera ajena); si no → sala. La elección se guarda en `localStorage` (`8bits-racing.car`). Teclas del garaje: ←/→ o A/D, Enter o Espacio.
 - **Dibujo:** `CAR_ART[modelo]` pinta cada coche visto desde arriba con rectángulos (sin logos), con ayudas comunes (`carShadow`, `carWheels`, `carBody`, `carGlass`, `carLights`). `drawCarPreview` los pinta en las tarjetas del garaje y en el recuadro "TU COCHE" de la sala.
-- **Equilibrio** (simulación de 4 vueltas a ritmo máximo por coche y pista, con el perfil de velocidad de cada uno): Challenger gana en VALLE VERDE, Supra en COSTA, Golf en INFIERNO y WRC en DEMENCIA; el R34 no gana en ninguna, pero nunca es el último; desventaja media entre 1,9 % y 2,9 %.
 - **Ojo:** `buildTrack(def, physOverride)` tiene un segundo parámetro. No usar `lista.map(buildTrack)`, porque `map` le pasa el índice como física (así se rompió: las reales no usaban F1 y los perfiles de velocidad salían NaN). Usar `lista.map(d => buildTrack(d))`.
 - **Vista baja** (móvil en horizontal, `shortView()` = `VIEW_H < 560`): el nombre de la pista, el subtítulo, el semáforo y "TU COCHE" se apilan justo debajo de los botones de arriba, más pequeños.
 

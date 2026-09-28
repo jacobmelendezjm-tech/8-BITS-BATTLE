@@ -12,7 +12,7 @@ const path = require('path');
 const os = require('os');
 const dgram = require('dgram');
 const { WebSocketServer } = require('ws');
-const { TRACKS, REAL_TRACKS, REAL_LAPS, ARENAS, DERBY, CARS, arenaInside } = require('./public/tracks.js');
+const { TRACKS, REAL_TRACKS, REAL_LAPS, REAL_LOADING_MS, ARENAS, DERBY, CARS, arenaInside } = require('./public/tracks.js');
 
 // ---------- Configuración ----------
 const PORT = Number(process.env.PORT) || 3000;
@@ -78,7 +78,7 @@ const num = (v, def = 0) => (typeof v === 'number' && isFinite(v) ? v : def);
 // ---------- Estado del juego ----------
 const players = new Map();   // id -> jugador
 let events = [];             // eventos de este tick
-let phase = 'lobby';         // lobby | voting | countdown | playing | ended
+let phase = 'lobby';         // lobby | voting | loading | countdown | playing | ended  (loading: solo pistas reales)
 let phaseStart = Date.now();
 let track = null;            // id de la pista (o arena) de la partida actual
 let mode = 'race';           // race | derby
@@ -125,7 +125,7 @@ function startCountdown(trackId) {
     hp: DERBY.START_HP, alive: true, kills: 0, shieldUntil: 0, koTime: null,
   }));
   for (const p of players.values()) p.vote = null;
-  setPhase('countdown');
+  setPhase(isReal(trackId) ? 'loading' : 'countdown');      // las reales empiezan con la pantalla de carga
   console.log(`  > ${mode === 'derby' ? 'Demolición' : 'Carrera'} en ${placeName(trackId)} con ${order.length} jugador(es)`);
 }
 
@@ -262,12 +262,13 @@ function update() {
     if (joined.length <= HOST_PICK_MAX) { setPhase('lobby'); return; }   // se fue gente: vuelve a elegir el host
     if (t >= VOTE_MS || joined.every(p => p.vote)) closeVoting();
   }
+  if (phase === 'loading' && t >= REAL_LOADING_MS) { setPhase('countdown'); return; }
   if (phase === 'countdown' && t >= COUNTDOWN_MS) {
     setPhase('playing');
     nextHealAt = phaseStart + DERBY.HEAL_EVERY;
     nextShieldAt = phaseStart + DERBY.SHIELD_EVERY;
   }
-  if (phase === 'countdown' || phase === 'playing') {
+  if (phase === 'loading' || phase === 'countdown' || phase === 'playing') {
     const rs = racers();
     if (!rs.length) { backToLobby(); return; }
     if (phase === 'playing' && mode === 'derby') updateDerby(now, now - phaseStart);
@@ -284,6 +285,7 @@ function snapshot() {
   const t = now - phaseStart;
   let left = 0;
   if (phase === 'voting') left = VOTE_MS - t;
+  else if (phase === 'loading') left = REAL_LOADING_MS - t;
   else if (phase === 'countdown') left = COUNTDOWN_MS - t;
   else if (phase === 'ended') left = END_SCREEN_MS - t;
   else if (phase === 'playing' && mode === 'derby') left = DERBY.TIME - t;
@@ -329,8 +331,60 @@ const STATIC = {
   '/music.mp3': ['music.mp3', 'audio/mpeg'],          // opcional: música propia (si existe)
 };
 
+// Banda sonora del equipo del profesor: las canciones de la carpeta soundtrack/
+// (o sountrack/) junto a server.js, en orden alfabético. Solo en local: la carpeta
+// está en .gitignore y .vercelignore, así que no se publica en internet.
+const SOUNDTRACK_DIRS = ['soundtrack', 'sountrack'].map(d => path.join(__dirname, d));
+const AUDIO_TYPES = { '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.opus': 'audio/ogg', '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.webm': 'audio/webm' };
+function soundtrack() {
+  for (const d of SOUNDTRACK_DIRS) {
+    try {
+      const files = fs.readdirSync(d).filter(f => AUDIO_TYPES[path.extname(f).toLowerCase()]).sort((a, b) => a.localeCompare(b, 'es'));
+      if (files.length) return { dir: d, files };
+    } catch { /* la carpeta no existe */ }
+  }
+  return { dir: null, files: [] };
+}
+// Nombre para mostrar: sin extensión, sin "(Official Video)" y sin el canal de YouTube del final
+function songTitle(file) {
+  const parts = path.basename(file, path.extname(file)).replace(/\s*[([](official|oficial|audio|video|lyric)[^)\]]*[)\]]/gi, '').split(' - ');
+  const last = parts[parts.length - 1].trim().toLowerCase();
+  if (parts.length >= 3 || (parts.length === 2 && parts[0].toLowerCase().includes(last))) parts.pop();
+  return parts.join(' - ').trim();
+}
+// Envía un archivo de audio aceptando rangos (Safari de iPhone los necesita para reproducir)
+function sendAudio(req, res, file, type) {
+  fs.stat(file, (err, st) => {
+    if (err) { res.writeHead(404); return res.end('No encontrado'); }
+    const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+    if (m && (m[1] || m[2])) {
+      const start = m[1] ? Number(m[1]) : Math.max(0, st.size - Number(m[2]));
+      const end = m[1] && m[2] ? Math.min(Number(m[2]), st.size - 1) : st.size - 1;
+      if (start > end || start >= st.size) { res.writeHead(416, { 'Content-Range': `bytes */${st.size}` }); return res.end(); }
+      res.writeHead(206, { 'Content-Type': type, 'Accept-Ranges': 'bytes', 'Content-Range': `bytes ${start}-${end}/${st.size}`, 'Content-Length': end - start + 1 });
+      fs.createReadStream(file, { start, end }).pipe(res);
+    } else {
+      res.writeHead(200, { 'Content-Type': type, 'Accept-Ranges': 'bytes', 'Content-Length': st.size });
+      fs.createReadStream(file).pipe(res);
+    }
+  });
+}
+
 const server = http.createServer((req, res) => {
-  const file = STATIC[req.url.split('?')[0]];
+  const url = req.url.split('?')[0];
+  if (url === '/soundtrack.json') {
+    const { files } = soundtrack();
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-cache' });
+    return res.end(JSON.stringify(files.map(f => ({ title: songTitle(f), url: '/soundtrack/' + encodeURIComponent(f) }))));
+  }
+  if (url.startsWith('/soundtrack/')) {
+    let name;
+    try { name = decodeURIComponent(url.slice('/soundtrack/'.length)); } catch { name = ''; }
+    const { dir: sdir, files } = soundtrack();
+    if (!files.includes(name)) { res.writeHead(404); return res.end('No encontrado'); }   // solo canciones de la lista
+    return sendAudio(req, res, path.join(sdir, name), AUDIO_TYPES[path.extname(name).toLowerCase()]);
+  }
+  const file = STATIC[url];
   if (!file) { res.writeHead(404); return res.end('No encontrado'); }
   fs.readFile(path.join(__dirname, 'public', file[0]), (err, data) => {
     if (err) { res.writeHead(err.code === 'ENOENT' ? 404 : 500); return res.end(err.code === 'ENOENT' ? 'No encontrado' : 'Error'); }
