@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>8 BITS BATTLE</title>
+  <title>8 BITS RACING</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
@@ -12,30 +12,33 @@
 
   <!-- Pantalla de entrada (alumnos) -->
   <section id="join" class="screen" hidden>
-    <h1 class="title">8 BITS<br><span>BATTLE</span></h1>
-    <p class="blink">¡SOLO PUEDE QUEDAR UNO!</p>
+    <h1 class="title">8 BITS<br><span>RACING</span></h1>
+    <p class="blink">¡4 VUELTAS PARA GANAR!</p>
     <form id="joinForm" class="box">
       <label for="nameInput">TU NOMBRE</label>
-      <input id="nameInput" maxlength="12" autocomplete="off" spellcheck="false" placeholder="JUGADOR" required>
-      <button type="submit">¡A LUCHAR!</button>
+      <input id="nameInput" maxlength="12" autocomplete="off" spellcheck="false" placeholder="PILOTO" required>
+      <button type="submit">¡A CORRER!</button>
     </form>
     <div class="help">
-      <p>MOVER: WASD / FLECHAS</p>
-      <p>APUNTAR: RATÓN</p>
-      <p>DISPARAR: CLIC / ESPACIO</p>
-      <p>SOLO TIENES <b id="helpShots">10</b> TIROS. ¡NO LOS MALGASTES!</p>
+      <p><b>W</b> ACELERAR · <b>S</b> FRENAR / MARCHA ATRÁS</p>
+      <p><b>A</b> GIRAR IZQUIERDA · <b>D</b> GIRAR DERECHA</p>
+      <p>M: SONIDO ON/OFF</p>
     </div>
   </section>
 
-  <!-- Pantalla de juego -->
-  <section id="game" class="screen" hidden>
+  <!-- Sala: elegir / votar pista -->
+  <section id="lobby" class="screen" hidden>
     <div class="layout">
-      <div class="stage">
-        <canvas id="canvas" width="960" height="640"></canvas>
-        <div class="hud">
-          <div><span class="lbl">VIDA</span> <span id="hudHp" class="hp"></span></div>
-          <div><span class="lbl">TIROS</span> <span id="hudAmmo" class="ammo"></span> <span id="hudAmmoNum"></span></div>
-          <div><span class="lbl">BAJAS</span> <span id="hudKills">0</span></div>
+      <div class="main">
+        <h1 class="title small">8 BITS <span>RACING</span></h1>
+        <div class="box status">
+          <p id="lobbyMsg">CONECTANDO...</p>
+          <p id="lobbySub" class="sub"></p>
+          <button id="btnVote" hidden>ABRIR VOTACIÓN</button>
+        </div>
+        <div id="trackList" class="tracks"></div>
+        <div class="help">
+          <p><b>W</b> ACELERAR · <b>S</b> FRENAR / MARCHA ATRÁS · <b>A</b>/<b>D</b> GIRAR · M: SONIDO</p>
         </div>
       </div>
 
@@ -46,9 +49,8 @@
         </div>
 
         <div id="hostPanel" class="box" hidden>
-          <div class="lbl">PANEL DEL PROFESOR</div>
-          <button id="btnStart">EMPEZAR PARTIDA</button>
-          <button id="btnStop" class="secondary">TERMINAR PARTIDA</button>
+          <div class="lbl">PANEL DEL HOST</div>
+          <p class="tiny left">1-2 JUGADORES: ELIGES TÚ LA PISTA.<br>3 O MÁS: SE VOTA.</p>
           <form id="hostJoinForm">
             <input id="hostName" maxlength="12" placeholder="JUGAR TAMBIÉN" autocomplete="off">
             <button type="submit" class="secondary">UNIRME</button>
@@ -56,17 +58,36 @@
         </div>
 
         <div class="box">
-          <div class="lbl">JUGADORES <span id="aliveCount"></span></div>
+          <div class="lbl">PILOTOS <span id="playerCount"></span></div>
           <ul id="playerList"></ul>
         </div>
-
-        <div class="box">
-          <div class="lbl">BAJAS</div>
-          <ul id="feed"></ul>
-        </div>
-
-        <div class="tiny">M: SONIDO ON/OFF</div>
       </aside>
+    </div>
+  </section>
+
+  <!-- Carrera -->
+  <section id="game" class="screen" hidden>
+    <div class="stage">
+      <canvas id="canvas" width="960" height="640"></canvas>
+
+      <div id="results" class="overlay" hidden>
+        <div class="box panel">
+          <h2 id="resultsTitle">RESULTADOS</h2>
+          <p id="resultsTrack" class="sub"></p>
+          <p id="resultsRecord" class="blink" hidden>¡NUEVO RÉCORD PERSONAL!</p>
+          <div class="tablewrap">
+            <table>
+              <thead><tr><th>POS</th><th>PILOTO</th><th>TIEMPO</th><th>MEJOR VUELTA</th></tr></thead>
+              <tbody id="resultsBody"></tbody>
+            </table>
+          </div>
+          <p id="resultsBack" class="sub"></p>
+        </div>
+      </div>
+    </div>
+    <div class="gamebar">
+      <span id="gameInfo" class="tiny"></span>
+      <button id="btnStop" class="secondary" hidden>TERMINAR CARRERA</button>
     </div>
   </section>
 
@@ -75,6 +96,7 @@
     <p class="blink">REINTENTANDO...</p>
   </div>
 
+  <script src="tracks.js"></script>
   <script src="client.js"></script>
 </body>
 </html>

@@ -1,6 +1,9 @@
 // ============================================================
-//  8 BITS BATTLE - Servidor (host del profesor)
-//  Todos contra todos, solo puede quedar uno.
+//  8 BITS RACING - Servidor (host del profesor)
+//  Carreras de 4 vueltas. Con 1-2 jugadores la pista la elige el
+//  host; con 3 o más se elige por votación.
+//  Cada navegador simula su propio coche y manda su posición; el
+//  servidor coordina la sala, la votación, la salida y la llegada.
 // ============================================================
 const http = require('http');
 const fs = require('fs');
@@ -8,69 +11,26 @@ const path = require('path');
 const os = require('os');
 const dgram = require('dgram');
 const { WebSocketServer } = require('ws');
+const { TRACKS } = require('./public/tracks.js');
 
 // ---------- Configuración ----------
 const PORT = Number(process.env.PORT) || 3000;
 const TICK_MS = 1000 / 30;          // 30 actualizaciones por segundo
-const TILE = 16;
-const MAX_SHOTS = 10;               // 10 tiros como máximo por jugador y partida
-const MAX_HP = 3;                   // vidas por jugador
-const SPEED = 2.2;                  // px por tick
-const BULLET_SPEED = 6;             // px por tick
-const BULLET_LIFE = 90;             // ticks (3 s)
-const SHOT_COOLDOWN = 350;          // ms entre disparos
-const PLAYER_R = 6;                 // radio del jugador (caja 12x12)
-const COUNTDOWN_MS = 3000;
-const END_SCREEN_MS = 7000;
-const ZONE_DELAY = 25000;           // la zona empieza a cerrarse a los 25 s
-const ZONE_SHRINK = 60000;          // tarda 60 s en cerrarse del todo
-const ZONE_DMG_EVERY = 1500;        // fuera de la zona pierdes 1 vida cada 1,5 s
+const LAPS = 4;
+const HOST_PICK_MAX = 2;            // hasta 2 jugadores elige el host; más, votación
+const VOTE_MS = 15000;              // duración de la votación
+const COUNTDOWN_MS = 4000;          // 1 s mostrando la pista + 3, 2, 1
+const FINISH_TIMEOUT = 45000;       // tras el primero en llegar, el resto tiene 45 s
+const END_SCREEN_MS = 12000;
 const NAME_MAX = 12;
 
-// Paleta tipo 8 bits para los jugadores
+const TRACK_IDS = TRACKS.map(t => t.id);
+
+// Paleta tipo 8 bits para los coches
 const COLORS = [
-  '#ff004d', '#29adff', '#00e436', '#ffec27', '#ff77a8', '#ffa300',
+  '#ffec27', '#ff004d', '#29adff', '#00e436', '#ff77a8', '#ffa300',
   '#83769c', '#ffccaa', '#00b3a4', '#c2c3c7', '#ab5236', '#7e2553',
 ];
-
-// Mapa 30x20: '#' = muro, '.' = suelo
-const MAP = [
-  '##############################',
-  '#............................#',
-  '#..##......#......#......##..#',
-  '#..#.......#......#.......#..#',
-  '#..........#......#..........#',
-  '#....###..............###....#',
-  '#............................#',
-  '#......##....####....##......#',
-  '#..#......................#..#',
-  '#..#.....#..........#.....#..#',
-  '#..#.....#..........#.....#..#',
-  '#..#......................#..#',
-  '#......##....####....##......#',
-  '#............................#',
-  '#....###..............###....#',
-  '#..........#......#..........#',
-  '#..#.......#......#.......#..#',
-  '#..##......#......#......##..#',
-  '#............................#',
-  '##############################',
-];
-const ROWS = MAP.length;
-const COLS = MAP[0].length;
-if (MAP.some(r => r.length !== COLS)) throw new Error('El mapa tiene filas de distinta longitud');
-const W = COLS * TILE;
-const H = ROWS * TILE;
-const ZONE_START_R = Math.hypot(W / 2, H / 2) + 10;
-
-const isWall = (tx, ty) =>
-  tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS || MAP[ty][tx] === '#';
-const wallAt = (x, y) => isWall(Math.floor(x / TILE), Math.floor(y / TILE));
-
-function boxHitsWall(x, y, r) {
-  return wallAt(x - r, y - r) || wallAt(x + r - 0.01, y - r) ||
-         wallAt(x - r, y + r - 0.01) || wallAt(x + r - 0.01, y + r - 0.01);
-}
 
 // ---------- Utilidades de red ----------
 const VIRTUAL_IF = /vmware|virtualbox|vbox|vethernet|hyper-v|wsl|docker|loopback|tailscale|zerotier/i;
@@ -99,174 +59,136 @@ function lanIPs() {
 }
 
 function cleanName(raw) {
-  let n = String(raw || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, NAME_MAX);
+  let n = String(raw || '').replace(/[\u0000-\u001f<>&"']/g, '').trim().slice(0, NAME_MAX);
   if (!n) n = 'Jugador';
-  const taken = new Set([...players.values()].map(p => p.name.toLowerCase()));
+  const taken = new Set([...players.values()].filter(p => p.joined).map(p => p.name.toLowerCase()));
   let final = n, i = 2;
   while (taken.has(final.toLowerCase())) final = `${n.slice(0, NAME_MAX - 2)}${i++}`;
   return final;
 }
 
+const num = (v, def = 0) => (typeof v === 'number' && isFinite(v) ? v : def);
+
 // ---------- Estado del juego ----------
 const players = new Map();   // id -> jugador
-let bullets = [];
-let events = [];             // eventos de este tick (disparos, impactos, muertes)
-let phase = 'lobby';         // lobby | countdown | playing | ended
+let events = [];             // eventos de este tick
+let phase = 'lobby';         // lobby | voting | countdown | playing | ended
 let phaseStart = Date.now();
-let winner = null;           // nombre del ganador o null (empate)
+let track = null;            // id de la pista de la carrera actual
+let raceId = 0;
+let firstFinish = 0;         // momento en que llegó el primero
+let finishCount = 0;
+let results = null;
 let nextId = 1;
 let colorIdx = 0;
 let hostAssigned = false;    // true mientras haya un host conectado
 
 function setPhase(p) { phase = p; phaseStart = Date.now(); }
+const joinedPlayers = () => [...players.values()].filter(p => p.joined);
+const racers = () => [...players.values()].filter(p => p.inGame);
 
-function zoneRadius() {
-  if (phase !== 'playing') return ZONE_START_R;
-  const t = Date.now() - phaseStart - ZONE_DELAY;
-  if (t <= 0) return ZONE_START_R;
-  return Math.max(0, ZONE_START_R * (1 - t / ZONE_SHRINK));
-}
-
-function randomSpawn(taken) {
-  let best = null, bestDist = -1;
-  for (let tries = 0; tries < 60; tries++) {
-    const tx = 1 + Math.floor(Math.random() * (COLS - 2));
-    const ty = 1 + Math.floor(Math.random() * (ROWS - 2));
-    if (isWall(tx, ty)) continue;
-    const x = tx * TILE + TILE / 2, y = ty * TILE + TILE / 2;
-    const d = taken.length ? Math.min(...taken.map(p => Math.hypot(p.x - x, p.y - y))) : 999;
-    if (d > bestDist) { best = { x, y }; bestDist = d; }
-    if (d > 120) break;
-  }
-  return best;
-}
-
-function startCountdown() {
-  const joined = [...players.values()].filter(p => p.joined);
-  if (joined.length < 2 || phase !== 'lobby') return;
-  bullets = [];
-  const taken = [];
-  for (const p of joined) {
-    const s = randomSpawn(taken);
-    taken.push(s);
-    Object.assign(p, {
-      x: s.x, y: s.y, hp: MAX_HP, ammo: MAX_SHOTS, alive: true, inGame: true,
-      kills: 0, lastShot: 0, lastZoneHit: 0,
-      input: { u: false, d: false, l: false, r: false },
-    });
-  }
+function startCountdown(trackId) {
+  const joined = joinedPlayers();
+  if (!joined.length || !TRACK_IDS.includes(trackId)) return;
+  track = trackId;
+  raceId++;
+  firstFinish = 0;
+  finishCount = 0;
+  results = null;
+  // Parrilla en orden aleatorio
+  const order = joined.sort(() => Math.random() - 0.5);
+  order.forEach((p, i) => Object.assign(p, {
+    inGame: true, grid: i, x: 0, y: 0, a: 0, pg: -1e9, lp: 0,
+    finished: false, finishTime: null, place: 0, best: null,
+  }));
+  for (const p of players.values()) p.vote = null;
   setPhase('countdown');
+  console.log(`  > Carrera en ${TRACKS.find(t => t.id === trackId).name} con ${order.length} jugador(es)`);
+}
+
+function startVoting() {
+  for (const p of players.values()) p.vote = null;
+  setPhase('voting');
+}
+
+function voteCounts() {
+  const c = Object.fromEntries(TRACK_IDS.map(id => [id, 0]));
+  for (const p of joinedPlayers()) if (p.vote) c[p.vote]++;
+  return c;
+}
+
+function closeVoting() {
+  const c = voteCounts();
+  const max = Math.max(...Object.values(c));
+  const tied = TRACK_IDS.filter(id => c[id] === max);   // si nadie vota, empatan todas
+  const winner = tied[Math.floor(Math.random() * tied.length)];
+  events.push({ k: 'voted', track: winner, tie: tied.length > 1 && max > 0 });
+  startCountdown(winner);
+}
+
+function endRace() {
+  const list = racers().sort((a, b) => {
+    if (a.finished && b.finished) return a.finishTime - b.finishTime;
+    if (a.finished) return -1;
+    if (b.finished) return 1;
+    return b.pg - a.pg;
+  });
+  results = list.map((p, i) => ({
+    n: p.name, c: p.color, id: p.id, pos: i + 1,
+    fin: p.finished, t: p.finishTime, lp: p.lp, best: p.best,
+  }));
+  setPhase('ended');
 }
 
 function backToLobby() {
-  bullets = [];
-  winner = null;
-  for (const p of players.values()) { p.inGame = false; p.alive = false; }
+  for (const p of players.values()) { p.inGame = false; p.vote = null; }
+  results = null;
   setPhase('lobby');
-}
-
-function damage(p, killer) {
-  p.hp--;
-  events.push({ k: 'hit', id: p.id });
-  if (p.hp <= 0) {
-    p.alive = false;
-    if (killer) killer.kills++;
-    events.push({ k: 'kill', killer: killer ? killer.name : 'la zona', victim: p.name, id: p.id });
-  }
-}
-
-function tryShoot(p, angle) {
-  if (phase !== 'playing' || !p.inGame || !p.alive) return;
-  const now = Date.now();
-  if (p.ammo <= 0 || now - p.lastShot < SHOT_COOLDOWN) return;
-  if (typeof angle !== 'number' || !isFinite(angle)) return;
-  p.lastShot = now;
-  p.ammo--;
-  const dx = Math.cos(angle), dy = Math.sin(angle);
-  bullets.push({
-    x: p.x + dx * (PLAYER_R + 2), y: p.y + dy * (PLAYER_R + 2),
-    dx: dx * BULLET_SPEED, dy: dy * BULLET_SPEED, owner: p.id, life: BULLET_LIFE,
-  });
-  events.push({ k: 'shot', id: p.id });
 }
 
 function update() {
   const now = Date.now();
+  const t = now - phaseStart;
 
-  if (phase === 'countdown' && now - phaseStart >= COUNTDOWN_MS) setPhase('playing');
-  if (phase === 'ended' && now - phaseStart >= END_SCREEN_MS) backToLobby();
-  if (phase !== 'playing') return;
-
-  const fighters = [...players.values()].filter(p => p.inGame && p.alive);
-
-  // Movimiento (eje a eje para deslizar por las paredes)
-  for (const p of fighters) {
-    let mx = (p.input.r ? 1 : 0) - (p.input.l ? 1 : 0);
-    let my = (p.input.d ? 1 : 0) - (p.input.u ? 1 : 0);
-    if (mx && my) { mx *= Math.SQRT1_2; my *= Math.SQRT1_2; }
-    const nx = p.x + mx * SPEED;
-    if (!boxHitsWall(nx, p.y, PLAYER_R)) p.x = nx;
-    const ny = p.y + my * SPEED;
-    if (!boxHitsWall(p.x, ny, PLAYER_R)) p.y = ny;
+  if (phase === 'voting') {
+    const joined = joinedPlayers();
+    if (joined.length <= HOST_PICK_MAX) { setPhase('lobby'); return; }   // se fue gente: vuelve a elegir el host
+    if (t >= VOTE_MS || joined.every(p => p.vote)) closeVoting();
   }
-
-  // Balas (en 2 sub-pasos para no atravesar nada)
-  const survivors = [];
-  for (const b of bullets) {
-    let dead = false;
-    for (let s = 0; s < 2 && !dead; s++) {
-      b.x += b.dx / 2; b.y += b.dy / 2;
-      if (wallAt(b.x, b.y)) { dead = true; events.push({ k: 'wall', x: Math.round(b.x), y: Math.round(b.y) }); break; }
-      for (const p of fighters) {
-        if (!p.alive || p.id === b.owner) continue;
-        if (Math.abs(p.x - b.x) <= PLAYER_R + 1 && Math.abs(p.y - b.y) <= PLAYER_R + 1) {
-          damage(p, players.get(b.owner));
-          dead = true;
-          break;
-        }
-      }
-    }
-    if (!dead && --b.life > 0) survivors.push(b);
+  if (phase === 'countdown' && t >= COUNTDOWN_MS) setPhase('playing');
+  if (phase === 'countdown' || phase === 'playing') {
+    const rs = racers();
+    if (!rs.length) { backToLobby(); return; }
+    if (phase === 'playing' && (rs.every(p => p.finished) ||
+        (firstFinish && now - firstFinish >= FINISH_TIMEOUT))) endRace();
   }
-  bullets = survivors;
-
-  // Zona que se cierra
-  const zr = zoneRadius();
-  for (const p of fighters) {
-    if (!p.alive) continue;
-    const out = Math.hypot(p.x - W / 2, p.y - H / 2) > zr;
-    if (out && now - p.lastZoneHit >= ZONE_DMG_EVERY) {
-      p.lastZoneHit = now;
-      damage(p, null);
-    }
-  }
-
-  // ¿Queda solo uno?
-  const alive = fighters.filter(p => p.alive);
-  if (alive.length <= 1) {
-    winner = alive.length === 1 ? alive[0].name : null;
-    bullets = [];
-    setPhase('ended');
-    events.push({ k: 'end', winner });
-  }
+  if (phase === 'ended' && t >= END_SCREEN_MS) backToLobby();
 }
 
 function snapshot() {
   const now = Date.now();
+  const t = now - phaseStart;
+  let left = 0;
+  if (phase === 'voting') left = VOTE_MS - t;
+  else if (phase === 'countdown') left = COUNTDOWN_MS - t;
+  else if (phase === 'ended') left = END_SCREEN_MS - t;
+  else if (phase === 'playing' && firstFinish) left = FINISH_TIMEOUT - (now - firstFinish);
   return JSON.stringify({
     t: 's',
     ph: phase,
-    cd: phase === 'countdown' ? Math.ceil((COUNTDOWN_MS - (now - phaseStart)) / 1000) : 0,
-    zt: phase === 'playing' ? Math.max(0, Math.ceil((ZONE_DELAY - (now - phaseStart)) / 1000)) : 0,
-    z: Math.round(zoneRadius()),
-    w: winner,
+    left: Math.max(0, Math.round(left)),
+    rt: phase === 'playing' ? t : 0,
+    rid: raceId,
+    tr: track,
+    votes: phase === 'voting' ? voteCounts() : null,
     p: [...players.values()].filter(p => p.joined).map(p => ({
-      id: p.id, n: p.name, c: p.color,
-      x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10,
-      a: Math.round((p.angle || 0) * 100) / 100,
-      hp: p.hp, am: p.ammo, al: p.alive, ig: p.inGame, k: p.kills,
+      id: p.id, n: p.name, c: p.color, h: p.isHost, ig: p.inGame, v: !!p.vote,
+      ...(p.inGame ? {
+        g: p.grid, x: p.x, y: p.y, a: p.a, pg: p.pg, lp: p.lp,
+        fin: p.finished, ft: p.finishTime, pl: p.place,
+      } : {}),
     })),
-    b: bullets.map(b => [Math.round(b.x), Math.round(b.y)]),
+    res: results,
     e: events,
   });
 }
@@ -276,6 +198,7 @@ const STATIC = {
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/index.html': ['index.html', 'text/html; charset=utf-8'],
   '/client.js': ['client.js', 'text/javascript; charset=utf-8'],
+  '/tracks.js': ['tracks.js', 'text/javascript; charset=utf-8'],
   '/style.css': ['style.css', 'text/css; charset=utf-8'],
 };
 
@@ -303,14 +226,14 @@ wss.on('connection', (ws, req) => {
   const p = {
     id: nextId++, ws, name: '', joined: false, isHost,
     color: COLORS[colorIdx++ % COLORS.length],
-    x: 0, y: 0, angle: 0, hp: 0, ammo: 0, alive: false, inGame: false, kills: 0,
-    lastShot: 0, lastZoneHit: 0, input: { u: false, d: false, l: false, r: false },
+    inGame: false, grid: 0, x: 0, y: 0, a: 0, pg: 0, lp: 0,
+    finished: false, finishTime: null, place: 0, best: null, vote: null,
   };
   players.set(p.id, p);
 
   ws.send(JSON.stringify({
     t: 'welcome', id: p.id, isHost, ips: lanIPs(), port: PORT,
-    map: MAP, tile: TILE, maxShots: MAX_SHOTS, maxHp: MAX_HP,
+    laps: LAPS, hostPickMax: HOST_PICK_MAX,
   }));
 
   ws.on('message', raw => {
@@ -326,16 +249,34 @@ wss.on('connection', (ws, req) => {
         ws.send(JSON.stringify({ t: 'joined', name: p.name }));
         console.log(`  + ${p.name} se ha unido (${addr.replace('::ffff:', '')})`);
         break;
-      case 'in':
-        p.input = { u: !!m.u, d: !!m.d, l: !!m.l, r: !!m.r };
-        if (typeof m.a === 'number' && isFinite(m.a)) p.angle = m.a;
+      case 'pick':         // el host elige la pista (1-2 jugadores)
+        if (p.isHost && phase === 'lobby' && joinedPlayers().length <= HOST_PICK_MAX) startCountdown(m.track);
         break;
-      case 'shoot':
-        if (typeof m.a === 'number' && isFinite(m.a)) p.angle = m.a;
-        tryShoot(p, m.a);
+      case 'voteStart':    // el host abre la votación (3 o más jugadores)
+        if (p.isHost && phase === 'lobby' && joinedPlayers().length > HOST_PICK_MAX) startVoting();
         break;
-      case 'start':
-        if (p.isHost) startCountdown();
+      case 'vote':
+        if (phase === 'voting' && p.joined && TRACK_IDS.includes(m.track)) p.vote = m.track;
+        break;
+      case 'st':           // posición del coche de este jugador
+        if (!p.inGame || m.rid !== raceId || (phase !== 'countdown' && phase !== 'playing')) return;
+        p.x = Math.round(num(m.x) * 10) / 10;
+        p.y = Math.round(num(m.y) * 10) / 10;
+        p.a = Math.round(num(m.a) * 100) / 100;
+        p.pg = Math.round(num(m.pg));
+        if (!p.finished) p.lp = Math.max(0, Math.min(LAPS, Math.floor(num(m.lp))));
+        if (typeof m.best === 'number' && m.best > 0) p.best = Math.round(m.best);
+        break;
+      case 'fin':          // ha cruzado la meta por última vez
+        if (!p.inGame || p.finished || phase !== 'playing' || m.rid !== raceId) return;
+        p.finished = true;
+        p.lp = LAPS;
+        p.finishTime = Date.now() - phaseStart;
+        if (typeof m.best === 'number' && m.best > 0) p.best = Math.round(m.best);
+        p.place = ++finishCount;
+        if (!firstFinish) firstFinish = Date.now();
+        events.push({ k: 'fin', n: p.name, c: p.color, pl: p.place });
+        console.log(`  # ${p.name} llega ${p.place}º`);
         break;
       case 'stop':
         if (p.isHost && phase !== 'lobby') backToLobby();
@@ -345,11 +286,17 @@ wss.on('connection', (ws, req) => {
 
   ws.on('close', () => {
     if (p.joined) console.log(`  - ${p.name} se ha desconectado`);
-    if (p.inGame && p.alive && phase === 'playing') {
-      events.push({ k: 'kill', killer: 'desconexión', victim: p.name, id: p.id });
-    }
     if (p.isHost) hostAssigned = false;
     players.delete(p.id);
+    // Si se va el host en un despliegue online, el siguiente conectado lo sustituye
+    if (!hostAssigned) {
+      const next = [...players.values()][0];
+      if (next) {
+        next.isHost = true;
+        hostAssigned = true;
+        if (next.ws.readyState === 1) next.ws.send(JSON.stringify({ t: 'host' }));
+      }
+    }
   });
 });
 
@@ -370,7 +317,7 @@ server.listen(PORT, '0.0.0.0', async () => {
   await new Promise(r => setTimeout(r, 300));   // da tiempo a detectar la IP principal
   const ips = lanIPs();
   console.log('\n  ==========================================');
-  console.log('        8 BITS BATTLE  -  servidor listo');
+  console.log('        8 BITS RACING  -  servidor listo');
   console.log('  ==========================================\n');
   console.log('  PROFESOR (host) abre en este equipo:');
   console.log(`     http://localhost:${PORT}\n`);

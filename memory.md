@@ -45,5 +45,8 @@ No se investigó la causa a fondo (posible permiso de la GitHub App de Vercel). 
 
 ## Otros cambios relevantes
 
+- **2026-09-28: el juego pasó de battle royale (8 BITS BATTLE) a carreras (8 BITS RACING).** Los despliegues, dominios y la lógica de host/`VERCEL_HOSTS`/`RENDER_WS_URL` se mantienen igual. Diferencia clave de arquitectura: ahora cada cliente simula su propio coche (antes el servidor era autoritativo) y el servidor carga `public/tracks.js` con `require`, así que Render necesita ese archivo en el repo.
+- Regla pedida por el usuario: con 1-2 pilotos la pista la elige el host; con 3 o más, votación (`HOST_PICK_MAX` en `server.js`).
+
 - `INICIAR.bat` ahora detecta si falta Node.js y lo instala solo con `winget` (paquete `OpenJS.NodeJS.LTS`) antes de arrancar el servidor.
 - `package.json` tiene `"dev": "start https://8bits-battle.vercel.app"` — `npm run dev` abre el juego online directamente en el navegador (Windows).

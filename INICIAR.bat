@@ -1,5 +1,5 @@
 @echo off
-title 8 BITS BATTLE - Servidor
+title 8 BITS RACING - Servidor
 cd /d "%~dp0"
 
 where node >nul 2>nul
