@@ -27,15 +27,48 @@ const $ = id => document.getElementById(id);
 const canvas = $('canvas');
 const ctx = canvas.getContext('2d');
 
-// Tamaño lógico de la vista. En ordenador es fijo (3:2); en móvil se adapta a
-// la pantalla manteniendo el lado corto en unos 440-480 px lógicos para que el
-// texto del marcador se lea bien.
+// ---------- Pantalla completa ----------
+const FS_SUPPORTED = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+const isFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+
+function enterFullscreen() {
+  const el = document.documentElement;
+  const fn = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!fn) return;
+  try {
+    const p = fn.call(el, { navigationUI: 'hide' });
+    if (p && p.catch) p.catch(() => {});
+  } catch {}
+}
+function exitFullscreen() {
+  const fn = document.exitFullscreen || document.webkitExitFullscreen;
+  if (!fn) return;
+  try {
+    const p = fn.call(document);
+    if (p && p.catch) p.catch(() => {});
+  } catch {}
+}
+function toggleFullscreen() {
+  if (isFullscreen()) exitFullscreen();
+  else enterFullscreen();
+}
+
+// Tamaño lógico de la vista. En ordenador (ventana normal) es fijo, 3:2. En móvil,
+// y en ordenador a pantalla completa, se adapta a la forma de la pantalla: el
+// lado corto mide 440-480 px lógicos en móvil (para que el texto se lea) y 640
+// en ordenador.
 let VIEW_W = 960, VIEW_H = 640;
 function resizeView() {
-  if (IS_TOUCH) {
+  const fill = IS_TOUCH || isFullscreen();
+  document.body.classList.toggle('fill', fill);
+  document.body.classList.toggle('is-fs', isFullscreen());
+  if (fill) {
     const w = innerWidth, h = innerHeight;
-    if (w >= h) { VIEW_H = 440; VIEW_W = Math.min(1400, Math.round(440 * w / h)); }
-    else { VIEW_W = 480; VIEW_H = Math.min(1400, Math.round(480 * h / w)); }
+    const short = IS_TOUCH ? (w >= h ? 440 : 480) : 640;
+    if (w >= h) { VIEW_H = short; VIEW_W = Math.min(1800, Math.round(short * w / h)); }
+    else { VIEW_W = short; VIEW_H = Math.min(1800, Math.round(short * h / w)); }
+  } else {
+    VIEW_W = 960; VIEW_H = 640;
   }
   if (canvas.width !== VIEW_W || canvas.height !== VIEW_H) {
     canvas.width = VIEW_W;
@@ -44,6 +77,8 @@ function resizeView() {
   ctx.imageSmoothingEnabled = false;
 }
 addEventListener('resize', resizeView);
+document.addEventListener('fullscreenchange', resizeView);
+document.addEventListener('webkitfullscreenchange', resizeView);
 resizeView();
 const compactHud = () => VIEW_W < 760;
 
@@ -135,6 +170,7 @@ addEventListener('keydown', e => {
   const k = KEYMAP[e.code];
   if (k) { keys[k] = true; e.preventDefault(); return; }
   if (e.code === 'KeyM') sound.toggle();
+  if (e.code === 'KeyF' && FS_SUPPORTED) toggleFullscreen();
 });
 addEventListener('keyup', e => {
   const k = KEYMAP[e.code];
@@ -1039,7 +1075,7 @@ function onSnapshot(s) {
     if (s.ph === 'ended' && $('results').hidden) showResults(s);
     if (s.ph === 'ended') $('resultsBack').textContent = `VOLVIENDO A LA SALA EN ${Math.ceil(s.left / 1000)}s`;
     $('btnStop').hidden = !isHost;
-    $('gameInfo').textContent = race ? `${race.t.def.name} · ${race.t.def.diff} · M: SONIDO` : '';
+    $('gameInfo').textContent = race ? `${race.t.def.name} · ${race.t.def.diff} · M: SONIDO${FS_SUPPORTED ? " · F: PANTALLA COMPLETA" : ""}` : '';
   }
   document.body.classList.toggle('results', !$('results').hidden);
   document.body.classList.toggle('spectator', !(race && race.car));
@@ -1076,12 +1112,7 @@ function connect() {
 // En móvil, pantalla completa al entrar (necesita un toque del usuario).
 // En iPhone no existe para páginas web: ahí simplemente no hace nada.
 function goFullscreen() {
-  if (!IS_TOUCH || document.fullscreenElement) return;
-  const el = document.documentElement;
-  try {
-    const p = (el.requestFullscreen || el.webkitRequestFullscreen || (() => null)).call(el, { navigationUI: 'hide' });
-    if (p && p.catch) p.catch(() => {});
-  } catch {}
+  if (IS_TOUCH && !isFullscreen()) enterFullscreen();
 }
 
 $('joinForm').addEventListener('submit', e => {
@@ -1100,6 +1131,12 @@ $('hostJoinForm').addEventListener('submit', e => {
 });
 $('btnVote').addEventListener('click', () => send({ t: 'voteStart' }));
 if (IS_TOUCH) $('btnStop').textContent = 'FIN';
+// Botón de pantalla completa (no aparece donde no existe, p. ej. Safari en iPhone)
+$('btnFullscreen').hidden = !FS_SUPPORTED;
+$('btnFullscreen').addEventListener('click', e => {
+  toggleFullscreen();
+  e.currentTarget.blur();          // que la barra espaciadora/Enter no lo vuelva a pulsar
+});
 $('btnStop').addEventListener('click', () => send({ t: 'stop' }));
 
 // ---------- Bucle principal ----------

@@ -24,8 +24,14 @@ La primera vez, Windows pedirá permiso en el firewall para Node.js: marca **Red
 Salirse del asfalto (hierba/tierra) frena mucho, y el muro de neumáticos te devuelve a la pista.
 
 ## Controles
-- **Ordenador:** **W** acelerar · **S** frenar / marcha atrás · **A** girar a la izquierda · **D** girar a la derecha · **M** sonido
+- **Ordenador:** **W** acelerar · **S** frenar / marcha atrás · **A** girar a la izquierda · **D** girar a la derecha · **M** sonido · **F** pantalla completa
 - **Móvil / tablet:** la carrera ocupa toda la pantalla (mejor en horizontal, también funciona en vertical). **Stick** abajo a la izquierda para girar (cuanto más lo empujas, más gira) · botón **A** acelerar · botón **B** frenar / marcha atrás. Se puede girar y acelerar a la vez con dos dedos.
+
+## Pantalla completa
+- Durante la carrera hay un botón de pantalla completa (arriba en el centro en el móvil, abajo a la derecha en el ordenador). Sirve para entrar y para salir.
+- En el ordenador también con la tecla **F** (o **F11**). A pantalla completa la vista se adapta a la forma de la pantalla, sin bandas negras.
+- En Android se activa sola al pulsar **¡A CORRER!**.
+- En iPhone no existe para páginas web (el botón no aparece): usa **Compartir → Añadir a pantalla de inicio** y abre el juego desde ese icono.
 
 ## Ajustes
 - `server.js`: `LAPS` (vueltas), `HOST_PICK_MAX` (hasta cuántos pilotos elige el host), `VOTE_MS`, `FINISH_TIMEOUT`, `PORT`.

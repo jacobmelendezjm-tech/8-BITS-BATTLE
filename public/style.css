@@ -291,27 +291,47 @@ button { touch-action: manipulation; }
   .tracks { grid-template-columns: 1fr; }
 }
 
-/* La carrera ocupa toda la pantalla */
-body.touch #game { padding: 0; min-height: 0; touch-action: none; overscroll-behavior: none; }
-body.touch #game .stage { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 1; }
-body.touch #canvas {
+/* La carrera ocupa toda la pantalla: siempre en móvil y, en ordenador,
+   cuando está en pantalla completa (body.fill lo pone client.js) */
+body.fill #game { padding: 0; min-height: 0; touch-action: none; overscroll-behavior: none; }
+body.fill #game .stage { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 1; }
+body.fill #canvas {
   width: 100%;
   height: 100%;
   aspect-ratio: auto;
+  object-fit: contain;
   border: 0;
   box-shadow: none;
   touch-action: none;
 }
-body.touch .gamebar {
+body.fill .gamebar {
   position: fixed;
   z-index: 12;
   top: calc(env(safe-area-inset-top, 0px) + 6px);
   left: 50%;
   transform: translateX(-50%);
   width: auto;
+  gap: 8px;
 }
-body.touch #gameInfo { display: none; }
-body.touch #btnStop { font-size: 8px; padding: 8px 10px; }
+body.fill #gameInfo { display: none; }
+body.touch .gamebar button { font-size: 8px; padding: 8px 10px; }
+
+/* Botón de pantalla completa */
+.btn-fs { display: inline-flex; align-items: center; gap: 8px; }
+.btn-fs svg { width: 14px; height: 14px; flex: none; }
+.btn-fs .ico-exit { display: none; }
+body.is-fs .btn-fs .ico-enter { display: none; }
+body.is-fs .btn-fs .ico-exit { display: block; }
+.btn-fs .l-exit { display: none; }
+body.is-fs .btn-fs .l-enter { display: none; }
+body.is-fs .btn-fs .l-exit { display: inline; }
+body.touch .btn-fs .fs-label { display: none; }
+body.touch .btn-fs svg { width: 16px; height: 16px; }
+
+/* Móvil en vertical: FIN y pantalla completa apilados, caben entre los marcadores */
+@media (orientation: portrait) {
+  body.touch .gamebar { flex-direction: column; gap: 6px; }
+}
 body.touch.results .stick,
 body.touch.results .pads,
 body.touch.spectator .stick,

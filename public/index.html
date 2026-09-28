@@ -46,7 +46,7 @@
         </div>
         <div id="trackList" class="tracks"></div>
         <div class="help">
-          <p class="desk-only"><b>W</b> ACELERAR · <b>S</b> FRENAR / MARCHA ATRÁS · <b>A</b>/<b>D</b> GIRAR · M: SONIDO</p>
+          <p class="desk-only"><b>W</b> ACELERAR · <b>S</b> FRENAR / MARCHA ATRÁS · <b>A</b>/<b>D</b> GIRAR · M: SONIDO · F: PANTALLA COMPLETA</p>
           <p class="touch-only"><b>STICK</b>: GIRAR · <b>A</b>: ACELERAR · <b>B</b>: FRENAR / MARCHA ATRÁS</p>
         </div>
       </div>
@@ -107,6 +107,11 @@
     <div class="gamebar">
       <span id="gameInfo" class="tiny"></span>
       <button id="btnStop" class="secondary" hidden>TERMINAR CARRERA</button>
+      <button id="btnFullscreen" type="button" class="secondary btn-fs" hidden aria-label="Pantalla completa">
+        <svg class="ico-enter" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M1 1h5v2H3v3H1zM10 1h5v5h-2V3h-3zM1 10h2v3h3v2H1zM13 10h2v5h-5v-2h3z"/></svg>
+        <svg class="ico-exit" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 1h2v5H1V4h3zM10 1h2v3h3v2h-5zM1 10h5v5H4v-3H1zM10 10h5v2h-3v3h-2z"/></svg>
+        <span class="fs-label"><span class="l-enter">PANTALLA COMPLETA</span><span class="l-exit">SALIR DE PANTALLA COMPLETA</span></span>
+      </button>
     </div>
   </section>
 
