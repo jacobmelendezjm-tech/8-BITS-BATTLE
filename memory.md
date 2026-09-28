@@ -46,6 +46,7 @@ No se investigó la causa a fondo (posible permiso de la GitHub App de Vercel). 
 ## Otros cambios relevantes
 
 - **2026-09-28: el juego pasó de battle royale (8 BITS BATTLE) a carreras (8 BITS RACING).** Los despliegues, dominios y la lógica de host/`VERCEL_HOSTS`/`RENDER_WS_URL` se mantienen igual. Diferencia clave de arquitectura: ahora cada cliente simula su propio coche (antes el servidor era autoritativo) y el servidor carga `public/tracks.js` con `require`, así que Render necesita ese archivo en el repo.
+- 2026-09-28: el usuario pidió actualización automática de GitHub y Vercel. Regla en `CLAUDE.md`: tras cada cambio, commit + push a `master`. Para que Vercel se actualice solo hay que conectar el repo en el dashboard de Vercel (Settings → Git); hasta que se haga, Vercel sigue mostrando la versión antigua. En el equipo del aula ("Alumno") no hay sesión de la CLI de Vercel ni `gh`.
 - Regla pedida por el usuario: con 1-2 pilotos la pista la elige el host; con 3 o más, votación (`HOST_PICK_MAX` en `server.js`).
 
 - `INICIAR.bat` ahora detecta si falta Node.js y lo instala solo con `winget` (paquete `OpenJS.NodeJS.LTS`) antes de arrancar el servidor.
