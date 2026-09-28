@@ -243,12 +243,13 @@ ul { list-style: none; margin: 8px 0 0; padding: 0; font-size: 10px; }
   position: absolute;
   inset: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  overflow: auto;
   background: rgba(0,0,0,.6);
   padding: 16px;
+  z-index: 20;
 }
 .panel {
+  margin: auto;
   width: min(560px, 100%);
   text-align: center;
   display: flex;
@@ -276,4 +277,138 @@ tr.me td { color: var(--accent); }
   z-index: 40;
   text-align: center;
   padding: 16px;
+}
+
+/* ---- Móviles y tablets (body.touch lo pone client.js) ---- */
+body:not(.touch) .touch-only { display: none !important; }
+body.touch .desk-only { display: none !important; }
+body.touch { -webkit-tap-highlight-color: transparent; }
+button { touch-action: manipulation; }
+
+@media (max-width: 520px) {
+  .screen { padding: 12px; }
+  .status p { font-size: 11px; }
+  .tracks { grid-template-columns: 1fr; }
+}
+
+/* La carrera ocupa toda la pantalla */
+body.touch #game { padding: 0; min-height: 0; touch-action: none; overscroll-behavior: none; }
+body.touch #game .stage { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 1; }
+body.touch #canvas {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  border: 0;
+  box-shadow: none;
+  touch-action: none;
+}
+body.touch .gamebar {
+  position: fixed;
+  z-index: 12;
+  top: calc(env(safe-area-inset-top, 0px) + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: auto;
+}
+body.touch #gameInfo { display: none; }
+body.touch #btnStop { font-size: 8px; padding: 8px 10px; }
+body.touch.results .stick,
+body.touch.results .pads,
+body.touch.spectator .stick,
+body.touch.spectator .pads { display: none !important; }
+
+/* Stick de dirección (izquierda) */
+.stick {
+  position: fixed;
+  z-index: 10;
+  left: calc(env(safe-area-inset-left, 0px) + 18px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  background: rgba(29,43,83,.45);
+  border: 4px solid rgba(41,173,255,.85);
+  box-shadow: 4px 4px 0 rgba(0,0,0,.6);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.stick::before {                 /* guía horizontal: el stick solo gira */
+  content: '';
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  top: 50%;
+  height: 12px;
+  margin-top: -6px;
+  background: rgba(0,0,0,.5);
+}
+.stick .arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  color: rgba(255,241,232,.75);
+  font-size: 12px;
+  pointer-events: none;
+}
+.stick .left { left: 9px; }
+.stick .right { right: 9px; }
+.knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--accent);
+  box-shadow: inset -5px -5px 0 #ab5236, 3px 3px 0 #000;
+  transition: transform .08s;
+  pointer-events: none;
+}
+.stick.on { border-color: var(--accent); }
+.stick.on .knob { transition: none; }
+
+/* Botones A (acelerar) y B (frenar) (derecha) */
+.pads {
+  position: fixed;
+  z-index: 10;
+  right: calc(env(safe-area-inset-right, 0px) + 18px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+}
+.pad {
+  width: 78px;
+  height: 78px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 24px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.pad-a {
+  margin-bottom: 24px;
+  background: var(--green);
+  color: #000;
+  box-shadow: inset -5px -5px 0 #008751, 4px 4px 0 #000;
+}
+.pad-b {
+  background: var(--red);
+  box-shadow: inset -5px -5px 0 #7e2553, 4px 4px 0 #000;
+}
+.pad:hover { filter: none; }
+.pad.on { transform: translate(2px, 2px) scale(.94); filter: brightness(1.3); }
+
+/* Móviles en horizontal con poca altura */
+@media (max-height: 380px) {
+  .stick { width: 128px; height: 128px; bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); }
+  .knob { width: 54px; height: 54px; }
+  .pads { bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); gap: 10px; }
+  .pad { width: 66px; height: 66px; font-size: 20px; }
+  .pad-a { margin-bottom: 18px; }
 }

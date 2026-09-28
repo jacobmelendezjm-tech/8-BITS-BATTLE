@@ -61,8 +61,10 @@ Si se cambia el dominio de Vercel o la URL de Render, hay que actualizar esas do
 - **Elección de pista** (pedida por el usuario): con 1-2 pilotos elige el host; con 3 o más, votación (`HOST_PICK_MAX` en `server.js`). Empates → sorteo entre las empatadas.
 - **Cada cliente simula su propio coche** (antes el servidor era autoritativo). Se eligió para que la conducción no tenga retraso online (Render). El servidor confía en los clientes: aceptable en el aula, pero se pueden hacer trampas.
 - No hay coches de IA: se quitaron cuando el usuario pidió el modo multijugador. Queda un piloto automático que conduce tu coche tras cruzar la meta.
-- La dificultad de las pistas se verificó con scripts de Node (sin commitear): separación mínima entre tramos, radio de curva mínimo y una simulación de 4 vueltas. Resultado: Normal 6 curvas / 0 cerradas, Difícil 12 / 6, Extrema 16 / 11; vueltas óptimas ≈ 11 s / 18 s / 29 s. Si se tocan los puntos de una pista, repetir esa comprobación.
-- Lo que no se probó: el juego en un navegador real (solo sintaxis, física y servidor con clientes simulados).
+- La dificultad de las pistas se verificó con scripts de Node (sin commitear): separación mínima entre tramos, radio de curva mínimo y una simulación de 4 vueltas. Resultado: Normal 6 curvas / 0 cerradas, Difícil 11 / 6, Extrema 17 / 11; vueltas óptimas ≈ 11 s / 18 s / 29 s. Si se tocan los puntos de una pista, repetir esa comprobación.
+- **Fallo encontrado y corregido (2026-09-28):** la línea de meta estaba en el primer punto de control, que en las tres pistas caía en plena curva (la parrilla giraba hasta 97°, los coches salían torcidos y el de atrás chocaba). Ahora `buildTrack` pone la salida en el tramo más recto. Lo destapó la prueba en navegador, no las simulaciones (que empezaban con el coche ya orientado).
+- **Móvil (pedido por el usuario):** stick a la izquierda solo para girar + botones A (acelerar) y B (frenar) a la derecha. El usuario primero pidió solo "el stick de movimiento" y luego añadió los botones A/B.
+- **Pruebas en navegador:** con Chrome headless + puppeteer-core (instalado en el scratchpad, no en el repo) emulando un Android en horizontal y vertical: controles táctiles con dos dedos, capturas de sala/carrera/espectador y escritorio. No se ha probado en un móvil físico ni en iPhone (Safari).
 
 ## Cuentas usadas
 

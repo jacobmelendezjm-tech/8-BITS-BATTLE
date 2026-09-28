@@ -123,6 +123,25 @@ function buildTrack(def) {
   if (Math.hypot(xs[xs.length - 1] - xs[0], ys[ys.length - 1] - ys[0]) < SAMPLE_DS * 0.5) { xs.pop(); ys.pop(); }
   const N = xs.length;
 
+  // 2b) La salida va en el tramo más recto: la parrilla (hasta 12 coches,
+  //     ~60 muestras detrás de la meta) y el arranque deben ser rectos.
+  {
+    const head = i => Math.atan2(ys[(i + 1) % N] - ys[i % N], xs[(i + 1) % N] - xs[i % N]);
+    const turn = new Float32Array(N);
+    for (let i = 0; i < N; i++) turn[i] = Math.abs(angDiff(head(i + 1), head(i)));
+    const BEFORE = 75, AFTER = 25;
+    let best = 0, bestScore = Infinity;
+    for (let s = 0; s < N; s++) {
+      let score = 0;
+      for (let k = -BEFORE; k <= AFTER; k++) score += turn[(s + k + N) % N];
+      if (score < bestScore - 1e-6) { bestScore = score; best = s; }
+    }
+    const rx = xs.slice(best).concat(xs.slice(0, best));
+    const ry = ys.slice(best).concat(ys.slice(0, best));
+    xs.splice(0, N, ...rx);
+    ys.splice(0, N, ...ry);
+  }
+
   // 3) Dirección, normal y curvatura de cada muestra
   const dir = new Float32Array(N), nx = new Float32Array(N), ny = new Float32Array(N);
   for (let i = 0; i < N; i++) {

@@ -12,7 +12,7 @@ Así la conducción es inmediata aunque haya latencia (importante en el modo onl
 |---|---|
 | `server.js` | Servidor HTTP + WebSocket: sala, host, elección/votación de pista, salida, llegada y resultados |
 | `public/tracks.js` | Definición de las 3 pistas, spline, física compartida (`PHYS`) y localización del coche en la pista. Lo usan el navegador y el servidor |
-| `public/client.js` | Pantallas (entrada, sala, carrera), física del coche propio, dibujo, HUD, sonido, red |
+| `public/client.js` | Pantallas (entrada, sala, carrera), física del coche propio, dibujo, HUD, controles (teclado y táctiles), sonido, red |
 | `public/index.html`, `public/style.css` | Interfaz |
 | `INICIAR.bat` | Instala Node si falta, instala dependencias y arranca el servidor |
 
@@ -42,6 +42,18 @@ La dificultad sube con el número de curvas, lo cerradas que son y el ancho de l
 - la **superficie** (asfalto, piano o hierba, que frena mucho),
 - el **muro** exterior, que devuelve el coche a la pista,
 - el **progreso** (muestras recorridas); cada `N` muestras es una vuelta completa. Ir marcha atrás resta progreso, por lo que no se pueden hacer trampas cruzando la meta hacia atrás.
+
+### 4.1 Salida y parrilla
+
+`buildTrack` coloca la línea de meta (muestra 0) en el tramo más recto de la pista: busca la ventana de 75 muestras antes y 25 después con menos giro acumulado. Así la parrilla (hasta 12 coches, ~60 muestras detrás de la meta) y el arranque quedan en recta, sea cual sea el primer punto de control.
+
+## 4b. Móviles y tablets
+
+- `client.js` detecta pantalla táctil con `matchMedia('(pointer: coarse)')` y añade la clase `touch` al `<body>`.
+- En móvil el canvas ocupa toda la pantalla y su tamaño lógico se adapta: en horizontal 440 px de alto, en vertical 480 px de ancho (`resizeView`). El marcador se recoloca: en móvil el minimapa y el velocímetro van en la columna derecha, porque abajo están los controles.
+- **Stick** (izquierda): solo gira; analógico con zona muerta. **Botones A/B** (derecha): acelerar y frenar. Cada control sigue a su propio dedo (Pointer Events + `setPointerCapture`), así que se puede girar y acelerar a la vez. El teclado sigue funcionando y se mezcla con lo táctil (`playerControl`).
+- Los controles se ocultan en modo espectador y con la tabla de resultados. Al entrar, se pide pantalla completa (no existe en iPhone para páginas web).
+- El margen del mapa pre-renderizado depende del tamaño de la vista, para que la cámara pueda centrar el coche también en vertical. En la pista extrema el lienzo llega a ~4100×2700 px, por debajo del límite de 16,7 M píxeles de Safari en iOS.
 
 ## 5. Protocolo de mensajes
 

@@ -18,13 +18,14 @@ La primera vez, Windows pedirá permiso en el firewall para Node.js: marca **Red
 | Pista | Dificultad | Curvas | Curvas cerradas | Ancho |
 |---|---|---|---|---|
 | VALLE VERDE | Normal | 6 | 0 | Amplio |
-| COSTA SERPIENTE | Difícil | 12 | 6 | Medio |
-| INFIERNO | Extrema | 16 | 11 | Estrecho |
+| COSTA SERPIENTE | Difícil | 11 | 6 | Medio |
+| INFIERNO | Extrema | 17 | 11 | Estrecho |
 
 Salirse del asfalto (hierba/tierra) frena mucho, y el muro de neumáticos te devuelve a la pista.
 
 ## Controles
-**W** acelerar · **S** frenar / marcha atrás · **A** girar a la izquierda · **D** girar a la derecha · **M** sonido
+- **Ordenador:** **W** acelerar · **S** frenar / marcha atrás · **A** girar a la izquierda · **D** girar a la derecha · **M** sonido
+- **Móvil / tablet:** la carrera ocupa toda la pantalla (mejor en horizontal, también funciona en vertical). **Stick** abajo a la izquierda para girar (cuanto más lo empujas, más gira) · botón **A** acelerar · botón **B** frenar / marcha atrás. Se puede girar y acelerar a la vez con dos dedos.
 
 ## Ajustes
 - `server.js`: `LAPS` (vueltas), `HOST_PICK_MAX` (hasta cuántos pilotos elige el host), `VOTE_MS`, `FINISH_TIMEOUT`, `PORT`.

@@ -16,14 +16,36 @@ const WS_URL = ONLINE ? RENDER_WS_URL : `${location.protocol === 'https:' ? 'wss
 let LAPS = 4;
 let HOST_PICK_MAX = 2;
 const STEP_MS = 1000 / 60;         // física a 60 pasos por segundo
-const VIEW_W = 960, VIEW_H = 640;
 const CAR_R = 13;                  // radio de choque entre coches
 const CURB = 10;                   // ancho del piano rojo/blanco
+
+// En móviles/tablets el juego ocupa toda la pantalla y se maneja con un stick táctil
+const IS_TOUCH = matchMedia('(pointer: coarse)').matches;
+if (IS_TOUCH) document.body.classList.add('touch');
 
 const $ = id => document.getElementById(id);
 const canvas = $('canvas');
 const ctx = canvas.getContext('2d');
-ctx.imageSmoothingEnabled = false;
+
+// Tamaño lógico de la vista. En ordenador es fijo (3:2); en móvil se adapta a
+// la pantalla manteniendo el lado corto en unos 440-480 px lógicos para que el
+// texto del marcador se lea bien.
+let VIEW_W = 960, VIEW_H = 640;
+function resizeView() {
+  if (IS_TOUCH) {
+    const w = innerWidth, h = innerHeight;
+    if (w >= h) { VIEW_H = 440; VIEW_W = Math.min(1400, Math.round(440 * w / h)); }
+    else { VIEW_W = 480; VIEW_H = Math.min(1400, Math.round(480 * h / w)); }
+  }
+  if (canvas.width !== VIEW_W || canvas.height !== VIEW_H) {
+    canvas.width = VIEW_W;
+    canvas.height = VIEW_H;
+  }
+  ctx.imageSmoothingEnabled = false;
+}
+addEventListener('resize', resizeView);
+resizeView();
+const compactHud = () => VIEW_W < 760;
 
 const built = TRACKS.map(buildTrack);
 const trackById = id => built.find(t => t.def.id === id);
@@ -120,8 +142,83 @@ addEventListener('keyup', e => {
 });
 addEventListener('blur', () => { keys.w = keys.a = keys.s = keys.d = false; });
 
+// ---------- Controles táctiles (móviles) ----------
+// Stick a la izquierda: solo gira (analógico, cuanto más lo empujas más gira).
+// Botones a la derecha: A acelera, B frena / marcha atrás.
+const stick = { active: false, id: null, x: 0 };
+const stickEl = $('stick'), knobEl = $('knob');
+
+function stickMove(e) {
+  const r = stickEl.getBoundingClientRect();
+  const max = r.width * 0.32;
+  const dx = Math.max(-max, Math.min(max, e.clientX - (r.left + r.width / 2)));
+  stick.x = dx / max;
+  knobEl.style.transform = `translate(calc(-50% + ${dx}px), -50%)`;
+}
+function stickRelease(e) {
+  if (e && e.pointerId !== stick.id) return;
+  stick.active = false; stick.id = null; stick.x = 0;
+  knobEl.style.transform = '';
+  stickEl.classList.remove('on');
+}
+stickEl.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  sound.init();
+  stick.active = true;
+  stick.id = e.pointerId;
+  stickEl.setPointerCapture(e.pointerId);
+  stickEl.classList.add('on');
+  stickMove(e);
+});
+stickEl.addEventListener('pointermove', e => { if (stick.active && e.pointerId === stick.id) stickMove(e); });
+stickEl.addEventListener('pointerup', stickRelease);
+stickEl.addEventListener('pointercancel', stickRelease);
+stickEl.addEventListener('lostpointercapture', stickRelease);
+stickEl.addEventListener('contextmenu', e => e.preventDefault());
+
+function stickSteer() {
+  const x = stick.x;
+  if (!stick.active || Math.abs(x) < 0.12) return 0;               // zona muerta
+  return Math.max(-1, Math.min(1, (x - Math.sign(x) * 0.12) * 1.35));
+}
+
+// Botones A (acelerar) y B (frenar). Cada uno sigue a su propio dedo,
+// así se puede girar con el stick y pulsar A a la vez.
+const pads = { a: false, b: false };
+for (const [key, id] of [['a', 'btnGas'], ['b', 'btnBrake']]) {
+  const el = $(id);
+  let pid = null;
+  const up = e => {
+    if (e.pointerId !== pid) return;
+    pid = null; pads[key] = false; el.classList.remove('on');
+  };
+  el.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    sound.init();
+    pid = e.pointerId;
+    el.setPointerCapture(e.pointerId);
+    pads[key] = true;
+    el.classList.add('on');
+  });
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', up);
+  el.addEventListener('lostpointercapture', up);
+  el.addEventListener('contextmenu', e => e.preventDefault());
+}
+
+// Mezcla teclado y controles táctiles
+function playerControl() {
+  return {
+    steer: Math.max(-1, Math.min(1, (keys.d ? 1 : 0) - (keys.a ? 1 : 0) + stickSteer())),
+    throttle: keys.w || pads.a ? 1 : 0,
+    brake: keys.s || pads.b ? 1 : 0,
+  };
+}
+
 // ---------- Render de la pista (una vez por carrera) ----------
-const MARGIN = RUNOFF + 260;
+// Margen alrededor de la pista: suficiente para que la cámara pueda centrar el
+// coche aunque esté en el borde del mapa (en vertical la vista es muy alta).
+const margins = () => [RUNOFF + Math.max(260, VIEW_W / 2 + 100), RUNOFF + Math.max(260, VIEW_H / 2 + 100)];
 
 function tracePath(c, t, ox, oy, scale = 1) {
   c.beginPath();
@@ -142,9 +239,10 @@ function gridSlot(t, g) {
 
 function renderTrack(t, gridCount) {
   const th = t.def.theme;
-  const ox = t.bounds.minX - MARGIN, oy = t.bounds.minY - MARGIN;
-  const w = Math.max(VIEW_W, Math.ceil(t.bounds.maxX - t.bounds.minX + 2 * MARGIN));
-  const h = Math.max(VIEW_H, Math.ceil(t.bounds.maxY - t.bounds.minY + 2 * MARGIN));
+  const [mx, my] = margins();
+  const ox = t.bounds.minX - mx, oy = t.bounds.minY - my;
+  const w = Math.max(VIEW_W, Math.ceil(t.bounds.maxX - t.bounds.minX + 2 * mx));
+  const h = Math.max(VIEW_H, Math.ceil(t.bounds.maxY - t.bounds.minY + 2 * my));
   const cv = document.createElement('canvas');
   cv.width = w; cv.height = h;
   const c = cv.getContext('2d');
@@ -289,8 +387,8 @@ function stepCar(car, ctl) {
   const grass = car.surface === 2;
   if (ctl.throttle) f += PHYS.accel * (grass ? 0.55 : 1) * ctl.throttle;
   if (ctl.brake) {
-    if (f > 0.15) f = Math.max(0, f - PHYS.brake);
-    else f -= PHYS.accel * 0.6;
+    if (f > 0.15) f = Math.max(0, f - PHYS.brake * ctl.brake);
+    else f -= PHYS.accel * 0.6 * ctl.brake;
   }
   if (!ctl.throttle && !ctl.brake) f *= 0.985;
   f *= grass ? 0.975 : car.surface === 1 ? 0.994 : 0.997;
@@ -394,7 +492,7 @@ function setupRace(s) {
   race = {
     rid: s.rid, t,
     gfx: renderTrack(t, Math.max(racersCount, 2)),
-    mini: renderMinimap(t, 190, 150),
+    mini: compactHud() || IS_TOUCH ? renderMinimap(t, 150, 120) : renderMinimap(t, 190, 150),
     car: me ? makeCar(t, me.g, me.c) : null,
     remotes: new Map(),
     state: 'countdown', frame: 0, raceFrame: 0,
@@ -432,9 +530,7 @@ function update() {
   }
 
   if (car && r.state === 'racing') {
-    const ctl = car.finished
-      ? autopilot(car, t)
-      : { steer: (keys.d ? 1 : 0) - (keys.a ? 1 : 0), throttle: keys.w ? 1 : 0, brake: keys.s ? 1 : 0 };
+    const ctl = car.finished ? autopilot(car, t) : playerControl();
     stepCar(car, ctl);
     collideRemote(car, r.remotes.values());
     updateTrackPos(car, t);
@@ -570,8 +666,12 @@ function box(x, y, w, h) {
   ctx.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3);
 }
 
-function text(str, x, y, size, color = '#fff1e8', align = 'left') {
+function text(str, x, y, size, color = '#fff1e8', align = 'left', maxW = 0) {
   ctx.font = `${size}px 'Press Start 2P', monospace`;
+  if (maxW && ctx.measureText(str).width > maxW) {     // encoge el texto si no cabe
+    size = Math.max(6, Math.floor(size * maxW / ctx.measureText(str).width));
+    ctx.font = `${size}px 'Press Start 2P', monospace`;
+  }
   ctx.textAlign = align;
   ctx.textBaseline = 'top';
   ctx.fillStyle = '#000';
@@ -609,46 +709,48 @@ function draw() {
   drawHud(r);
 }
 
+// Marcador. En ordenador: minimapa y velocímetro abajo. En móvil van en la
+// columna derecha, porque abajo están el stick (izquierda) y los botones A/B (derecha).
 function drawHud(r) {
   const car = r.car;
+  const c = compactHud();
+  const touchSafe = IS_TOUCH ? 190 : 12;           // hueco inferior para los controles táctiles
+  const m = r.mini, mw = m.canvas.width, mh = m.canvas.height;
+  const timesW = c ? 196 : 250, fs = c ? 8 : 10;
+  let rightY = 12;                                 // siguiente hueco libre en la columna derecha
 
   if (car) {
     const me = r.order.findIndex(o => o.me) + 1;
     // Vuelta y posición
-    box(12, 12, 240, 78);
+    const lapW = c ? 200 : 240, posX = c ? 124 : 160;
+    box(12, 12, lapW, 78);
     text('VUELTA', 26, 26, 10, '#ffec27');
     text(`${Math.min(LAPS, car.lapsDone + 1)}/${LAPS}`, 26, 46, 22);
-    text('POS', 160, 26, 10, '#ffec27');
-    text(`${me}º`, 160, 46, 22, me === 1 ? '#00e436' : '#fff1e8');
+    text('POS', posX, 26, 10, '#ffec27');
+    text(`${me}º`, posX, 46, 22, me === 1 ? '#00e436' : '#fff1e8');
 
     // Tiempos
-    box(VIEW_W - 262, 12, 250, 92);
+    const tx = VIEW_W - timesW - 12;
+    box(tx, 12, timesW, 92);
     const cur = r.state === 'countdown' ? 0 : r.raceFrame;
-    text('TOTAL', VIEW_W - 248, 26, 10, '#ffec27');
-    text(fmtFrames(car.finished ? car.finishFrame : cur), VIEW_W - 26, 26, 10, '#fff1e8', 'right');
-    text('VUELTA', VIEW_W - 248, 50, 10, '#ffec27');
-    text(fmtFrames(car.finished ? car.lapTimes[car.lapTimes.length - 1] : cur - car.lapStart), VIEW_W - 26, 50, 10, '#fff1e8', 'right');
-    text('MEJOR', VIEW_W - 248, 74, 10, '#ffec27');
-    text(fmtFrames(car.bestLap), VIEW_W - 26, 74, 10, '#00e436', 'right');
-
-    // Velocímetro
-    box(12, VIEW_H - 70, 200, 58);
-    const kmh = Math.round(Math.abs(car.fwd) * 30);
-    text(String(kmh).padStart(3, '0'), 26, VIEW_H - 54, 22, car.surface === 2 ? '#ffa300' : '#fff1e8');
-    text('KM/H', 130, VIEW_H - 46, 10, '#ffec27');
-    ctx.fillStyle = '#000'; ctx.fillRect(26, VIEW_H - 24, 172, 6);
-    ctx.fillStyle = kmh > 240 ? '#ff004d' : '#00e436';
-    ctx.fillRect(26, VIEW_H - 24, Math.round(172 * Math.min(1, Math.abs(car.fwd) / PHYS.maxSpeed)), 6);
+    text('TOTAL', tx + 14, 26, fs, '#ffec27');
+    text(fmtFrames(car.finished ? car.finishFrame : cur), VIEW_W - 26, 26, fs, '#fff1e8', 'right');
+    text('VUELTA', tx + 14, 50, fs, '#ffec27');
+    text(fmtFrames(car.finished ? car.lapTimes[car.lapTimes.length - 1] : cur - car.lapStart), VIEW_W - 26, 50, fs, '#fff1e8', 'right');
+    text('MEJOR', tx + 14, 74, fs, '#ffec27');
+    text(fmtFrames(car.bestLap), VIEW_W - 26, 74, fs, '#00e436', 'right');
+    rightY = 112;
   } else {
-    box(12, 12, 300, 44);
-    text('MODO ESPECTADOR', 26, 28, 10, '#ffec27');
+    box(12, 12, c ? 160 : 300, 44);
+    text('MODO ESPECTADOR', 26, c ? 30 : 28, c ? 8 : 10, '#ffec27');
   }
 
   // Minimapa
-  const m = r.mini;
-  const mx = VIEW_W - m.canvas.width - 12, my = VIEW_H - m.canvas.height - 12;
+  const mx = VIEW_W - mw - 12;
+  const my = IS_TOUCH ? rightY : VIEW_H - mh - 12;
+  if (IS_TOUCH) rightY += mh + 8;
   ctx.fillStyle = 'rgba(0,0,0,.55)';
-  ctx.fillRect(mx, my, m.canvas.width, m.canvas.height);
+  ctx.fillRect(mx, my, mw, mh);
   ctx.drawImage(m.canvas, mx, my);
   const dots = [...r.remotes.values()];
   if (car) dots.push(car);
@@ -661,37 +763,61 @@ function drawHud(r) {
     ctx.fillRect(Math.round(x - s / 2), Math.round(y - s / 2), s, s);
   }
 
-  // Clasificación en directo
-  const ly = car ? 104 : 68, rows = r.order.slice(0, 12);
+  // Velocímetro
+  if (car) {
+    const sw = c ? 170 : 200;
+    const sx = IS_TOUCH ? VIEW_W - sw - 12 : 12;
+    const sy = IS_TOUCH ? rightY : VIEW_H - 70;
+    box(sx, sy, sw, 58);
+    const kmh = Math.round(Math.abs(car.fwd) * 30);
+    text(String(kmh).padStart(3, '0'), sx + 14, sy + 16, 22, car.surface === 2 ? '#ffa300' : '#fff1e8');
+    text('KM/H', sx + sw - 70, sy + 24, 10, '#ffec27');
+    const bw = sw - 28;
+    ctx.fillStyle = '#000'; ctx.fillRect(sx + 14, sy + 46, bw, 6);
+    ctx.fillStyle = kmh > 240 ? '#ff004d' : '#00e436';
+    ctx.fillRect(sx + 14, sy + 46, Math.round(bw * Math.min(1, Math.abs(car.fwd) / PHYS.maxSpeed)), 6);
+  }
+
+  // Clasificación en directo (solo las filas que caben; tú siempre sales)
+  const ly = car ? 104 : 68;
+  const fit = Math.max(3, Math.floor((VIEW_H - touchSafe - ly - 16) / 18));
+  let rows = r.order.slice(0, Math.min(12, fit));
+  const mine = r.order.find(o => o.me);
+  if (mine && !rows.includes(mine)) rows[rows.length - 1] = mine;
   box(12, ly, 220, 16 + rows.length * 18);
   rows.forEach((o, i) => {
+    const pos = r.order.indexOf(o) + 1;
     ctx.fillStyle = o.color;
     ctx.fillRect(24, ly + 12 + i * 18, 8, 8);
-    text(`${i + 1} ${o.name}`, 40, ly + 11 + i * 18, 8, o.me ? '#ffec27' : '#fff1e8');
+    text(`${pos} ${o.name}`, 40, ly + 11 + i * 18, 8, o.me ? '#ffec27' : '#fff1e8');
     text(o.fin ? 'META' : `V${Math.min(LAPS, o.lp + 1)}`, 220, ly + 11 + i * 18, 8, o.fin ? '#00e436' : '#83769c', 'right');
   });
 
   // Cuenta atrás
+  const maxW = VIEW_W - 24;
   if (r.state === 'countdown' && snap.ph === 'countdown') {
     const n = Math.ceil(snap.left / 1000);
     if (n > 3) {
-      text(r.t.def.name, VIEW_W / 2, VIEW_H / 2 - 70, 28, r.t.def.color, 'center');
-      text(`DIFICULTAD ${r.t.def.diff} · ${LAPS} VUELTAS`, VIEW_W / 2, VIEW_H / 2 - 20, 12, '#fff1e8', 'center');
+      text(r.t.def.name, VIEW_W / 2, VIEW_H / 2 - 70, 28, r.t.def.color, 'center', maxW);
+      text(`DIFICULTAD ${r.t.def.diff} · ${LAPS} VUELTAS`, VIEW_W / 2, VIEW_H / 2 - 20, 12, '#fff1e8', 'center', maxW);
     } else if (n > 0) {
       text(String(n), VIEW_W / 2, VIEW_H / 2 - 60, 72, n === 1 ? '#ffa300' : '#ff004d', 'center');
     }
-    if (car) text('W ACELERAR  S FRENAR  A/D GIRAR', VIEW_W / 2, VIEW_H - 110, 10, '#fff1e8', 'center');
+    if (car) {
+      if (IS_TOUCH) text('STICK: GIRAR · A: ACELERAR · B: FRENAR', VIEW_W / 2, VIEW_H / 2 + 40, 10, '#fff1e8', 'center', maxW);
+      else text('W ACELERAR  S FRENAR  A/D GIRAR', VIEW_W / 2, VIEW_H - 110, 10, '#fff1e8', 'center');
+    }
   }
 
   // Mensajes
   if (r.banner && r.frame < r.banner.until) {
-    text(r.banner.text, VIEW_W / 2, 150, 28, r.banner.color, 'center');
+    text(r.banner.text, VIEW_W / 2, c ? Math.round(VIEW_H * 0.3) : 150, 28, r.banner.color, 'center', maxW);
   }
   if (car && car.wrongWay > 40 && !car.finished && Math.floor(r.frame / 20) % 2 === 0) {
-    text('¡SENTIDO CONTRARIO!', VIEW_W / 2, VIEW_H / 2 + 40, 18, '#ff004d', 'center');
+    text('¡SENTIDO CONTRARIO!', VIEW_W / 2, VIEW_H / 2 + 40, 18, '#ff004d', 'center', maxW);
   }
   if (snap.ph === 'playing' && snap.left > 0) {
-    text(`FIN DE CARRERA EN ${Math.ceil(snap.left / 1000)}s`, VIEW_W / 2, 110, 10, '#ffa300', 'center');
+    text(`FIN DE CARRERA EN ${Math.ceil(snap.left / 1000)}s`, VIEW_W / 2, c ? Math.round(VIEW_H * 0.3) - 30 : 110, 10, '#ffa300', 'center', maxW);
   }
 }
 
@@ -856,7 +982,12 @@ function showScreen(id) {
   if (currentScreen === id) return;
   currentScreen = id;
   for (const s of document.querySelectorAll('.screen')) s.hidden = s.id !== id;
-  if (id !== 'game') sound.setEngine(0, false);
+  if (id !== 'game') {
+    sound.setEngine(0, false);
+    stickRelease({ pointerId: stick.id });
+    pads.a = pads.b = false;
+  }
+  resizeView();
   if (id === 'join') setTimeout(() => $('nameInput').focus(), 0);
 }
 
@@ -910,6 +1041,8 @@ function onSnapshot(s) {
     $('btnStop').hidden = !isHost;
     $('gameInfo').textContent = race ? `${race.t.def.name} · ${race.t.def.diff} · M: SONIDO` : '';
   }
+  document.body.classList.toggle('results', !$('results').hidden);
+  document.body.classList.toggle('spectator', !(race && race.car));
 }
 
 // ---------- Red ----------
@@ -940,19 +1073,33 @@ function connect() {
   };
 }
 
+// En móvil, pantalla completa al entrar (necesita un toque del usuario).
+// En iPhone no existe para páginas web: ahí simplemente no hace nada.
+function goFullscreen() {
+  if (!IS_TOUCH || document.fullscreenElement) return;
+  const el = document.documentElement;
+  try {
+    const p = (el.requestFullscreen || el.webkitRequestFullscreen || (() => null)).call(el, { navigationUI: 'hide' });
+    if (p && p.catch) p.catch(() => {});
+  } catch {}
+}
+
 $('joinForm').addEventListener('submit', e => {
   e.preventDefault();
   sound.init();
+  goFullscreen();
   myName = $('nameInput').value.trim();
   send({ t: 'join', name: myName });
 });
 $('hostJoinForm').addEventListener('submit', e => {
   e.preventDefault();
   sound.init();
+  goFullscreen();
   myName = $('hostName').value.trim() || 'HOST';
   send({ t: 'join', name: myName });
 });
 $('btnVote').addEventListener('click', () => send({ t: 'voteStart' }));
+if (IS_TOUCH) $('btnStop').textContent = 'FIN';
 $('btnStop').addEventListener('click', () => send({ t: 'stop' }));
 
 // ---------- Bucle principal ----------
