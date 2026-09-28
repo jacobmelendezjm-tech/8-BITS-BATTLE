@@ -18,7 +18,8 @@ let HOST_PICK_MAX = 2;
 const STEP_MS = 1000 / 60;         // física a 60 pasos por segundo
 const CAR_R = 13;                  // radio de choque entre coches (en la arena, × DERBY.CAR_SCALE)
 const carScale = () => (race && race.mode === 'derby' ? DERBY.CAR_SCALE : 1);
-const carR = () => CAR_R * carScale();
+const isF1 = () => !!(race && race.t && race.t.phys === F1);
+const carR = () => (isF1() ? 9 : CAR_R * carScale());   // un F1 mide 5,6 x 2 m (28 x 10 px)
 const CURB = 10;                   // ancho del piano rojo/blanco
 const FALL_FRAMES = 70;            // lo que dura la caída por un acantilado (~1,2 s)
 // Turbo para el último: más punta y aceleración hasta alcanzar al de delante
@@ -88,7 +89,7 @@ document.addEventListener('webkitfullscreenchange', resizeView);
 resizeView();
 const compactHud = () => VIEW_W < 760;
 
-const built = TRACKS.map(buildTrack);
+const built = [...TRACKS, ...REAL_TRACKS].map(buildTrack);
 const trackById = id => built.find(t => t.def.id === id);
 const arenaById = id => ARENAS.find(a => a.id === id);
 const buildArena = a => ({ def: a, arena: a, bounds: arenaBounds(a) });
@@ -416,102 +417,252 @@ function gridSlot(t, g) {
   };
 }
 
-function renderTrack(t, gridCount) {
-  const th = t.def.theme;
-  const [mx, my] = margins();
-  const ox = t.bounds.minX - mx, oy = t.bounds.minY - my;
-  const w = Math.max(VIEW_W, Math.ceil(t.bounds.maxX - t.bounds.minX + 2 * mx));
-  const h = Math.max(VIEW_H, Math.ceil(t.bounds.maxY - t.bounds.minY + 2 * my));
-  const cv = document.createElement('canvas');
-  cv.width = w; cv.height = h;
-  const c = cv.getContext('2d');
-  const W = t.def.width;
+// La pista se dibuja por bloques de TILE px que se generan al entrar en pantalla
+// (las pistas reales a escala miden más de 10.000 px: no caben en un solo lienzo).
+const TILE = 512;
+const MAX_TILES = 36;
+const hash2 = (a, b) => { let h = (a * 374761393 + b * 668265263) >>> 0; h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0; return h ^ (h >>> 16); };
 
-  // Fondo
-  c.fillStyle = th.out;
-  c.fillRect(0, 0, w, h);
-  const r = rng(t.N * 7919);
-  for (let i = 0; i < w * h / 900; i++) {
-    c.fillStyle = r() < 0.5 ? 'rgba(0,0,0,.10)' : 'rgba(255,255,255,.05)';
-    c.fillRect(Math.floor(r() * w / 4) * 4, Math.floor(r() * h / 4) * 4, 4, 4);
+function makeTrackGfx(t, gridCount) {
+  const m = t.half + t.runoff + 60;
+  const px = Math.max(260, VIEW_W / 2 + 100), py = Math.max(260, VIEW_H / 2 + 100);
+  const g = {
+    t, gridCount, tiles: new Map(), budget: 0,
+    ox: Math.floor(t.bounds.minX - m - px), oy: Math.floor(t.bounds.minY - m - py),
+  };
+  g.w = Math.max(VIEW_W, Math.ceil(t.bounds.maxX - t.bounds.minX + 2 * (m + px)));
+  g.h = Math.max(VIEW_H, Math.ceil(t.bounds.maxY - t.bounds.minY + 2 * (m + py)));
+  // Índice espacial de muestras, para decorar solo lejos de la pista
+  g.cell = 256; g.grid = new Map();
+  for (let i = 0; i < t.N; i += 2) {
+    const k = Math.floor(t.xs[i] / g.cell) + ',' + Math.floor(t.ys[i] / g.cell);
+    if (!g.grid.has(k)) g.grid.set(k, []);
+    g.grid.get(k).push(i);
   }
+  g.decks = t.crossings.map(cr => renderDeck(t, cr));
+  g.gantries = t.gantries.map(i => renderGantry(t, i));
+  return g;
+}
 
+// Tramos consecutivos de muestras dentro de un rectángulo: [inicio, nº de segmentos]
+function trackRuns(t, x1, y1, x2, y2) {
+  const N = t.N, inside = new Uint8Array(N);
+  let any = false;
+  for (let i = 0; i < N; i++) {
+    if (t.xs[i] >= x1 && t.xs[i] <= x2 && t.ys[i] >= y1 && t.ys[i] <= y2) { inside[i] = 1; any = true; }
+  }
+  if (!any) return [];
+  let first = 0;
+  while (first < N && inside[first]) first++;
+  if (first === N) return [[0, N]];                 // toda la pista dentro
+  const runs = [];
+  for (let k = 1; k <= N; k++) {
+    const i = (first + k) % N;
+    if (inside[i] && !inside[(i - 1 + N) % N]) {
+      let len = 0;
+      while (inside[(i + len + 1) % N] && len < N) len++;
+      runs.push([(i - 1 + N) % N, len + 2]);        // una muestra de margen a cada lado
+    }
+  }
+  return runs;
+}
+
+function tilePath(c, t, s0, len, x0, y0, closed) {
+  c.beginPath();
+  for (let k = 0; k <= len; k++) {
+    const i = (s0 + k) % t.N;
+    if (k === 0) c.moveTo(t.xs[i] - x0, t.ys[i] - y0); else c.lineTo(t.xs[i] - x0, t.ys[i] - y0);
+  }
+  if (closed) c.closePath();
+}
+
+function renderTile(g, tx, ty) {
+  const t = g.t, th = t.def.theme, W = t.def.width, RO = t.runoff;
+  const x0 = g.ox + tx * TILE, y0 = g.oy + ty * TILE;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = TILE;
+  const c = cv.getContext('2d');
+  const r = rng(hash2(tx + 5000, ty + 5000) ^ (t.N * 7919));
+  c.fillStyle = th.out;
+  c.fillRect(0, 0, TILE, TILE);
+  for (let i = 0; i < TILE * TILE / 900; i++) {
+    c.fillStyle = r() < 0.5 ? 'rgba(0,0,0,.10)' : 'rgba(255,255,255,.05)';
+    c.fillRect(Math.floor(r() * TILE / 4) * 4, Math.floor(r() * TILE / 4) * 4, 4, 4);
+  }
+  const E = W / 2 + RO + 30;
+  const runs = trackRuns(t, x0 - E, y0 - E, x0 + TILE + E, y0 + TILE + E);
   c.lineJoin = 'round';
   c.lineCap = 'round';
   const stroke = (width, color, dash) => {
     c.setLineDash(dash || []);
     c.lineWidth = width;
     c.strokeStyle = color;
-    tracePath(c, t, ox, oy);
-    c.stroke();
+    for (const [s0, len] of runs) {
+      c.lineDashOffset = s0 * SAMPLE_DS;            // así las rayas casan entre bloques
+      tilePath(c, t, s0, Math.min(len, t.N), x0, y0, len >= t.N);
+      c.stroke();
+    }
   };
-
-  // Muro de neumáticos, escapatoria, pianos y asfalto
-  stroke(W + 2 * RUNOFF + 14, '#fff1e8');
-  stroke(W + 2 * RUNOFF + 14, '#ff004d', [14, 14]);
-  stroke(W + 2 * RUNOFF, th.runoff);
-  stroke(W + 2 * CURB, '#ff004d');
-  stroke(W + 2 * CURB, '#fff1e8', [16, 16]);
-  stroke(W, th.asphalt);
-  // Grano del asfalto
-  for (let i = 0; i < t.N; i++) {
-    for (let k = 0; k < 3; k++) {
-      const off = (r() - 0.5) * (W - 8);
-      c.fillStyle = r() < 0.5 ? 'rgba(0,0,0,.12)' : 'rgba(255,255,255,.05)';
-      c.fillRect(Math.round(t.xs[i] + t.nx[i] * off - ox), Math.round(t.ys[i] + t.ny[i] * off - oy), 3, 3);
+  if (runs.length) {
+    const walls = t.def.walls;                      // circuito urbano: muros de hormigón
+    stroke(W + 2 * RO + 14, walls ? '#c2c3c7' : '#fff1e8');
+    stroke(W + 2 * RO + 14, walls ? '#83769c' : '#ff004d', walls ? [36, 6] : [14, 14]);
+    stroke(W + 2 * RO, th.runoff);
+    stroke(W + 2 * CURB, '#ff004d');
+    stroke(W + 2 * CURB, '#fff1e8', [16, 16]);
+    stroke(W, th.asphalt);
+    for (const [s0, len] of runs) {                 // grano del asfalto (fijo por muestra)
+      for (let k = 0; k <= len; k++) {
+        const i = (s0 + k) % t.N, rr = rng(i * 9973 + 17);
+        for (let q = 0; q < 3; q++) {
+          const off = (rr() - 0.5) * (W - 8);
+          c.fillStyle = rr() < 0.5 ? 'rgba(0,0,0,.12)' : 'rgba(255,255,255,.05)';
+          c.fillRect(Math.round(t.xs[i] + t.nx[i] * off - x0), Math.round(t.ys[i] + t.ny[i] * off - y0), 3, 3);
+        }
+      }
     }
-  }
-  stroke(3, 'rgba(255,241,232,.45)', [26, 26]);
-  if (t.cliff) drawTrackHazards(c, t, ox, oy, r);
-
-  // Decoración fuera de la pista (árboles / rocas), lejos del muro
-  const minD = W / 2 + RUNOFF + 40;
-  for (let n = 0; n < 700; n++) {
-    const x = ox + r() * w, y = oy + r() * h;
-    let near = Infinity;
-    for (let i = 0; i < t.N; i += 3) {
-      const d = Math.hypot(t.xs[i] - x, t.ys[i] - y);
-      if (d < near) near = d;
-      if (near < minD) break;
-    }
-    if (near < minD) continue;
-    const s = 3 + Math.floor(r() * 3);
-    const px = Math.round(x - ox), py = Math.round(y - oy);
-    c.fillStyle = 'rgba(0,0,0,.35)';
-    c.fillRect(px - s * 2 + 4, py - s * 2 + 4, s * 4, s * 4);
-    c.fillStyle = th.deco[Math.floor(r() * th.deco.length)];
-    c.fillRect(px - s * 2, py - s * 2, s * 4, s * 4);
-    c.fillStyle = 'rgba(255,255,255,.18)';
-    c.fillRect(px - s * 2, py - s * 2, s * 2, s * 2);
-  }
-
-  // Línea de meta (cuadros) y casillas de la parrilla
-  drawCheckers(c, t, ox, oy);
-  for (let g = 0; g < gridCount; g++) {
-    const s = gridSlot(t, g), i = s.idx;
-    c.save();
-    c.translate(t.xs[i] + t.nx[i] * s.lat - ox, t.ys[i] + t.ny[i] * s.lat - oy);
-    c.rotate(t.dir[i]);
-    c.strokeStyle = 'rgba(255,241,232,.7)';
-    c.lineWidth = 3;
+    stroke(3, 'rgba(255,241,232,.45)', [26, 26]);
+    drawTrackHazards(c, t, x0, y0);
+    // Sombras de los puentes y de las pasarelas sobre la pista (extremos rectos)
     c.setLineDash([]);
-    c.beginPath();
-    c.moveTo(8, -16); c.lineTo(24, -16); c.lineTo(24, 16); c.lineTo(8, 16);
-    c.stroke();
+    c.lineCap = 'butt';
+    for (const cr of t.crossings) {
+      c.lineWidth = W + 2 * CURB + 12;
+      c.strokeStyle = 'rgba(0,0,0,.35)';
+      tilePath(c, t, (cr.up - cr.B + 1 + t.N) % t.N, 2 * cr.B - 2, x0 - 10, y0 - 12, false);
+      c.stroke();
+    }
+    c.lineCap = 'round';
+    for (const i of t.gantries) {
+      c.save();
+      c.translate(t.xs[i] - x0 + 14, t.ys[i] - y0 + 16);
+      c.rotate(t.dir[i]);
+      c.fillStyle = 'rgba(0,0,0,.3)';
+      c.fillRect(-12, -(W / 2 + RO + 30), 24, W + 2 * RO + 60);
+      c.restore();
+    }
+    drawCheckers(c, t, x0, y0);
+    for (let q = 0; q < g.gridCount; q++) {
+      const sl = gridSlot(t, q), i = sl.idx;
+      c.save();
+      c.translate(t.xs[i] + t.nx[i] * sl.lat - x0, t.ys[i] + t.ny[i] * sl.lat - y0);
+      c.rotate(t.dir[i]);
+      c.strokeStyle = 'rgba(255,241,232,.7)';
+      c.lineWidth = 3;
+      c.beginPath();
+      const L = t.phys === F1 ? 16 : 24, Hh = t.phys === F1 ? 9 : 16;
+      c.moveTo(L - 16, -Hh); c.lineTo(L, -Hh); c.lineTo(L, Hh); c.lineTo(L - 16, Hh);
+      c.stroke();
+      c.restore();
+    }
+  }
+  // Decoración (árboles, rocas, edificios...) lejos de la pista
+  const minD = W / 2 + RO + 40, reach = Math.ceil(minD / g.cell) + 1;
+  const nDeco = Math.round(TILE * TILE * 5.5e-5);
+  for (let q = 0; q < nDeco; q++) {
+    const lx = r() * TILE, ly = r() * TILE, x = x0 + lx, y = y0 + ly;
+    const gx = Math.floor(x / g.cell), gy = Math.floor(y / g.cell);
+    let near = false;
+    for (let dx = -reach; dx <= reach && !near; dx++) for (let dy = -reach; dy <= reach && !near; dy++) {
+      for (const i of g.grid.get((gx + dx) + ',' + (gy + dy)) || []) {
+        if (Math.hypot(t.xs[i] - x, t.ys[i] - y) < minD) { near = true; break; }
+      }
+    }
+    const sz = 3 + Math.floor(r() * 3), col = th.deco[Math.floor(r() * th.deco.length)];
+    if (near) continue;
+    const px = Math.round(lx), py = Math.round(ly);
+    c.fillStyle = 'rgba(0,0,0,.35)';
+    c.fillRect(px - sz * 2 + 4, py - sz * 2 + 4, sz * 4, sz * 4);
+    c.fillStyle = col;
+    c.fillRect(px - sz * 2, py - sz * 2, sz * 4, sz * 4);
+    c.fillStyle = 'rgba(255,255,255,.18)';
+    c.fillRect(px - sz * 2, py - sz * 2, sz * 2, sz * 2);
+  }
+  return { canvas: cv, ctx: c, x0, y0 };
+}
+
+// Devuelve el bloque (lo genera si hace falta y queda presupuesto en este frame)
+function getTile(g, tx, ty, force) {
+  const key = tx + ',' + ty;
+  let tile = g.tiles.get(key);
+  if (!tile && (force || g.budget > 0)) {
+    g.budget--;
+    tile = renderTile(g, tx, ty);
+    g.tiles.set(key, tile);
+  }
+  if (tile) tile.used = race ? race.frame : 0;
+  return tile;
+}
+
+// Libera los bloques que llevan más tiempo sin usarse
+function trimTiles(g) {
+  if (g.tiles.size <= MAX_TILES) return;
+  const old = [...g.tiles.entries()].sort((a, b) => a[1].used - b[1].used);
+  for (let k = 0; k < g.tiles.size - MAX_TILES; k++) g.tiles.delete(old[k][0]);
+}
+
+// Tablero de un puente (cruce): el tramo de arriba con barandillas, en un sprite
+function renderDeck(t, cr) {
+  const W = t.def.width, idx = [];
+  for (let k = -cr.B; k <= cr.B; k++) idx.push((cr.up + k + t.N) % t.N);
+  const m = W / 2 + CURB + 14;
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  for (const i of idx) { x1 = Math.min(x1, t.xs[i]); y1 = Math.min(y1, t.ys[i]); x2 = Math.max(x2, t.xs[i]); y2 = Math.max(y2, t.ys[i]); }
+  x1 = Math.floor(x1 - m); y1 = Math.floor(y1 - m);
+  const cv = document.createElement('canvas');
+  cv.width = Math.ceil(x2 + m - x1); cv.height = Math.ceil(y2 + m - y1);
+  const c = cv.getContext('2d');
+  c.lineJoin = 'round'; c.lineCap = 'butt';
+  const path = () => { c.beginPath(); idx.forEach((i, k) => (k ? c.lineTo(t.xs[i] - x1, t.ys[i] - y1) : c.moveTo(t.xs[i] - x1, t.ys[i] - y1))); };
+  const st = (w, col, dash, off) => { c.setLineDash(dash || []); c.lineDashOffset = off || 0; c.lineWidth = w; c.strokeStyle = col; path(); c.stroke(); };
+  st(W + 2 * CURB + 16, '#16161a');                         // borde exterior
+  st(W + 2 * CURB + 12, '#c2c3c7');                         // barandilla de hormigón
+  st(W + 2 * CURB + 12, '#83769c', [6, 10]);                // postes
+  st(W + 2 * CURB, '#fff1e8');                              // línea blanca del borde
+  st(W, t.def.theme.asphalt);
+  st(3, 'rgba(255,241,232,.45)', [26, 26], idx[0] * SAMPLE_DS);
+  // juntas de dilatación en los extremos
+  for (const i of [idx[0], idx[idx.length - 1]]) {
+    c.save();
+    c.translate(t.xs[i] - x1, t.ys[i] - y1);
+    c.rotate(t.dir[i]);
+    c.fillStyle = '#16161a';
+    c.fillRect(-3, -(W / 2 + CURB + 8), 6, W + 2 * CURB + 16);
     c.restore();
   }
+  return { canvas: cv, x0: x1, y0: y1 };
+}
 
-  return { canvas: cv, ctx: c, ox, oy, w, h };
+// Pasarela sobre la pista (pistas reales): se dibuja por encima de los coches
+function renderGantry(t, i) {
+  const W = t.def.width, L = W + 2 * t.runoff + 60, S = Math.ceil(L + 40);
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const c = cv.getContext('2d');
+  c.translate(S / 2, S / 2);
+  c.rotate(t.dir[i]);
+  c.fillStyle = '#5f574f';                                 // pilares
+  c.fillRect(-12, -L / 2 - 6, 24, 20);
+  c.fillRect(-12, L / 2 - 14, 24, 20);
+  c.fillStyle = '#16161a';                                 // viga
+  c.fillRect(-11, -L / 2, 22, L);
+  c.fillStyle = '#c2c3c7';
+  c.fillRect(-9, -L / 2 + 2, 18, L - 4);
+  c.fillStyle = t.def.color;                               // pancarta con el color de la pista
+  c.fillRect(-7, -W / 2, 14, W);
+  c.fillStyle = '#fff1e8';
+  for (let y = -W / 2 + 4; y < W / 2 - 4; y += 12) c.fillRect(-2, y, 4, 6);
+  return { canvas: cv, x0: t.xs[i] - S / 2, y0: t.ys[i] - S / 2 };
 }
 
 // Acantilados (vacío con borde de roca), manchas de aceite, barro y raíles de los bloques
-function drawTrackHazards(c, t, ox, oy, r) {
-  const inner = t.half + CURB, outer = t.half + RUNOFF + 18;
+function drawTrackHazards(c, t, ox, oy) {
+  const inner = t.half + CURB, outer = t.half + t.runoff + 18;
   const edge = (i, side, d) => [t.xs[i] + t.nx[i] * side * d - ox, t.ys[i] + t.ny[i] * side * d - oy];
   for (let i = 0; i < t.N; i++) {
     const cv = t.cliff[i];
     if (!cv) continue;
-    const j = (i + 1) % t.N;
+    const j = (i + 1) % t.N, r = rng(i * 131 + 7);
     for (const side of cv === 2 ? [-1, 1] : [cv]) {
       const a = edge(i, side, inner), b = edge(j, side, inner), cc = edge(j, side, outer), d = edge(i, side, outer);
       c.fillStyle = '#000';
@@ -541,6 +692,7 @@ function drawTrackHazards(c, t, ox, oy, r) {
     c.beginPath(); c.arc(x + 3, y + 2, o.r * 0.7, 0.2, 1.4); c.stroke();
   }
   for (const m of t.mud) {
+    const r = rng(m.idx * 53 + 3);
     c.save();
     c.translate(m.x - ox, m.y - oy);
     c.rotate(m.ang);
@@ -729,6 +881,7 @@ function makeCar(t, g, color) {
     progress: -s.back,             // muestras recorridas (negativo = detrás de la meta)
     lapsDone: 0, lapStart: 0, lapTimes: [], bestLap: null,
     finished: false, finishFrame: null, wrongWay: 0, bumpCd: 0,
+    phys: t.phys,                  // kart o Fórmula 1
   };
 }
 
@@ -774,10 +927,11 @@ function reportHit(o, ram) {
 }
 
 function stepCar(car, ctl) {
-  // 1) Girar (más lento a baja y a muy alta velocidad)
+  const P = car.phys || PHYS;                        // kart o Fórmula 1
+  // 1) Girar (kart: más lento a baja y a muy alta velocidad; F1: limitado por el agarre lateral)
   const dirSign = car.fwd >= 0 ? 1 : -1;
   const grip = car.oil > 0 ? 0.35 : 1;               // en aceite el volante casi no responde
-  car.angle += ctl.steer * turnRate(car.fwd) * dirSign * grip;
+  car.angle += ctl.steer * turnRateFor(P, car.fwd) * dirSign * grip;
   if (car.spin) {                                    // trompo al pisar aceite
     car.angle += car.spin;
     car.spin *= 0.93;
@@ -790,16 +944,21 @@ function stepCar(car, ctl) {
   let l = -car.vx * fy + car.vy * fx;
 
   const grass = car.surface === 2;
-  if (ctl.throttle) f += PHYS.accel * (grass ? 0.55 : 1) * ctl.throttle * (car.turbo ? TURBO.accel : 1);
-  if (ctl.brake) {
-    if (f > 0.15) f = Math.max(0, f - PHYS.brake * ctl.brake);
-    else f -= PHYS.accel * 0.6 * ctl.brake;
+  const top = P.maxSpeed * (car.turbo ? (P.turboSpeed || TURBO.speed) : 1);
+  if (ctl.throttle) {
+    // F1: el empuje cae al acercarse a la punta (resistencia del aire)
+    const fall = P.falloff && f > 0 ? 1 - P.falloff * Math.min(1, (f / top) ** 2) : 1;
+    f += P.accel * (grass ? 0.55 : 1) * ctl.throttle * (car.turbo ? TURBO.accel : 1) * fall;
   }
-  if (!ctl.throttle && !ctl.brake) f *= 0.985;
-  f *= grass ? 0.975 : car.surface === 1 ? 0.994 : 0.997;
-  f = Math.max(-PHYS.reverseMax, Math.min(PHYS.maxSpeed * (car.turbo ? TURBO.speed : 1), f));
-  if (grass && f > PHYS.grassMax) f = Math.max(PHYS.grassMax, f * 0.94);
-  l *= car.oil > 0 ? 0.985 : grass ? 0.9 : 0.8;    // en aceite el coche resbala
+  if (ctl.brake) {
+    if (f > 0.15) f = Math.max(0, f - P.brake * ctl.brake);
+    else f -= P.accel * (P.falloff ? 1.5 : 0.6) * ctl.brake;
+  }
+  if (!ctl.throttle && !ctl.brake) f *= P.falloff ? 0.994 : 0.985;
+  f *= grass ? 0.975 : car.surface === 1 ? 0.994 : (P.drag || 0.997);
+  f = Math.max(-P.reverseMax, Math.min(top, f));
+  if (grass && f > P.grassMax) f = Math.max(P.grassMax, f * 0.94);
+  l *= car.oil > 0 ? 0.985 : grass ? 0.9 : (P.grip || 0.8);    // en aceite el coche resbala
   if (car.oil > 0) car.oil--;
 
   car.vx = f * fx - l * fy;
@@ -812,7 +971,7 @@ function stepCar(car, ctl) {
 
 function updateTrackPos(car, t) {
   const loc = locate(t, car.x, car.y, car.idx);
-  const limit = t.half + RUNOFF - CAR_R * 0.6;
+  const limit = t.half + t.runoff - carR() * 0.6;
   // Muro: si te sales de la escapatoria, te devuelve y pierdes velocidad
   if (loc.dist > limit) {
     const i = loc.idx;
@@ -943,7 +1102,9 @@ function autopilot(car, t) {
 function collideRemote(car, others, derby) {
   const touching = new Set();
   const R2 = carR() * 2;                            // distancia entre centros al tocarse
+  const myLvl = !derby && race.t.crossings && race.t.crossings.length ? levelAt(race.t, car.idx) : 0;
   for (const o of others) {
+    if (!derby && (o.lvl || 0) !== myLvl) continue;   // uno pasa por el puente y el otro por debajo
     const dx = car.x - o.x, dy = car.y - o.y;
     const d = Math.hypot(dx, dy);
     // Contacto: empieza al chocar de verdad y dura mientras sigáis casi pegados
@@ -1002,7 +1163,8 @@ function setupRace(s) {
   const small = compactHud() || IS_TOUCH;
   race = {
     rid: s.rid, t, mode: derby ? 'derby' : 'race',
-    gfx: derby ? renderArena(t, Math.max(racersCount, 2)) : renderTrack(t, Math.max(racersCount, 2)),
+    gfx: derby ? renderArena(t, Math.max(racersCount, 2)) : makeTrackGfx(t, Math.max(racersCount, 2)),
+    laps: s.nl || (t.def && t.def.real ? REAL_LAPS : LAPS),
     mini: derby
       ? renderArenaMinimap(t, small ? 150 : 190, small ? 120 : 150)
       : renderMinimap(t, small ? 150 : 190, small ? 120 : 150),
@@ -1108,7 +1270,8 @@ function update() {
   let target = car;
   if (!car) target = list.map(o => r.remotes.get(o.id)).find(Boolean);
   if (target) {
-    const tx = target.x + (target.vx || 0) * 14, ty = target.y + (target.vy || 0) * 14;
+    const ahead = isF1() ? 24 : 14;                  // a 500 km/h hay que ver más lejos
+    const tx = target.x + (target.vx || 0) * ahead, ty = target.y + (target.vy || 0) * ahead;
     r.cam.x += (tx - r.cam.x) * 0.12;
     r.cam.y += (ty - r.cam.y) * 0.12;
   }
@@ -1161,7 +1324,7 @@ function checkLap(car) {
   car.lapTimes.push(lapTime);
   if (car.bestLap == null || lapTime < car.bestLap) car.bestLap = lapTime;
 
-  if (car.lapsDone >= LAPS) {
+  if (car.lapsDone >= r.laps) {
     car.finished = true;
     car.finishFrame = r.raceFrame;
     send({ t: 'fin', rid: r.rid, best: car.bestLap * STEP_MS });
@@ -1174,22 +1337,27 @@ function checkLap(car) {
     }
     return;
   }
-  if (car.lapsDone === LAPS - 1) banner('¡ÚLTIMA VUELTA!', '#ff004d', 150);
-  else banner(`VUELTA ${car.lapsDone + 1}/${LAPS}`, '#29adff', 100);
+  if (car.lapsDone === r.laps - 1) banner('¡ÚLTIMA VUELTA!', '#ff004d', 150);
+  else banner(`VUELTA ${car.lapsDone + 1}/${r.laps}`, '#29adff', 100);
   sound.beep(660, 0.12);
 }
 
 // Marcas de derrape pintadas directamente sobre la pista pre-renderizada
 function addSkid(car) {
   if (car.surface === 2 || Math.abs(car.lat) < 1.3) return;
-  const g = race.gfx, c = g.ctx;
+  const g = race.gfx;
   const ca = Math.cos(car.angle), sa = Math.sin(car.angle);
-  const k = carScale(), sz = Math.round(4 * k);        // ruedas traseras (más grandes en la arena)
-  c.fillStyle = 'rgba(20,18,24,.35)';
+  const k = isF1() ? 0.7 : carScale(), sz = Math.max(3, Math.round(4 * k));   // ruedas traseras
   for (const side of [-7 * k, 7 * k]) {
-    const x = car.x - ca * 12 * k - sa * side - g.ox;
-    const y = car.y - sa * 12 * k + ca * side - g.oy;
-    c.fillRect(Math.round(x - sz / 2), Math.round(y - sz / 2), sz, sz);
+    const x = car.x - ca * 12 * k - sa * side, y = car.y - sa * 12 * k + ca * side;
+    let c = g.ctx, ox = g.ox, oy = g.oy;
+    if (g.tiles) {                                   // pista por bloques: se pinta en el bloque que toca
+      const tile = g.tiles.get(Math.floor((x - g.ox) / TILE) + ',' + Math.floor((y - g.oy) / TILE));
+      if (!tile) continue;
+      c = tile.ctx; ox = tile.x0; oy = tile.y0;
+    }
+    c.fillStyle = 'rgba(20,18,24,.35)';
+    c.fillRect(Math.round(x - ox - sz / 2), Math.round(y - oy - sz / 2), sz, sz);
   }
 }
 
@@ -1205,12 +1373,14 @@ function drawCar(c, car) {
     c.globalAlpha = Math.max(0.25, f);
   }
   if (k !== 1) c.scale(k, k);                 // arena: coches más grandes
+  const f1 = isF1();
   if (car.turbo || car.tb) {                  // llamas del turbo por el tubo de escape
-    const fl = 8 + Math.random() * 10;
-    c.fillStyle = '#ff004d'; c.fillRect(-19 - fl, -5, fl, 10);
-    c.fillStyle = '#ffa300'; c.fillRect(-19 - fl * 0.7, -4, fl * 0.7, 8);
-    c.fillStyle = '#ffec27'; c.fillRect(-19 - fl * 0.35, -2, fl * 0.35, 4);
+    const fl = 8 + Math.random() * 10, bx = f1 ? -15 : -19;
+    c.fillStyle = '#ff004d'; c.fillRect(bx - fl, -5, fl, 10);
+    c.fillStyle = '#ffa300'; c.fillRect(bx - fl * 0.7, -4, fl * 0.7, 8);
+    c.fillStyle = '#ffec27'; c.fillRect(bx - fl * 0.35, -2, fl * 0.35, 4);
   }
+  if (f1) { drawF1Body(c, car); c.restore(); return; }
   c.fillStyle = 'rgba(0,0,0,.35)';            // sombra
   c.fillRect(-16, -8, 34, 20);
   c.fillStyle = '#111';                       // ruedas
@@ -1231,6 +1401,28 @@ function drawCar(c, car) {
   c.fillStyle = '#fff1e8';                    // faros
   c.fillRect(15, -7, 2, 4); c.fillRect(15, 3, 2, 4);
   c.restore();
+}
+
+// Fórmula 1 visto desde arriba: 28 x 10 px (5,6 x 2 m), ruedas descubiertas y alerones
+function drawF1Body(c, car) {
+  c.fillStyle = 'rgba(0,0,0,.35)';            // sombra
+  c.fillRect(-13, -5, 30, 12);
+  c.fillStyle = '#111';                       // ruedas (las traseras más anchas)
+  c.fillRect(6, -8, 6, 3); c.fillRect(6, 5, 6, 3);
+  c.fillRect(-11, -9, 7, 4); c.fillRect(-11, 5, 7, 4);
+  c.fillStyle = car.dark;                     // alerón delantero
+  c.fillRect(13, -7, 3, 14);
+  c.fillStyle = car.color;                    // morro y monocasco
+  c.fillRect(-10, -2, 24, 4);
+  c.fillRect(-9, -5, 12, 10);                 // pontones
+  c.fillStyle = car.dark;
+  c.fillRect(-9, -5, 12, 1); c.fillRect(-9, 4, 12, 1);
+  c.fillStyle = '#1d2b53';                    // cabina
+  c.fillRect(1, -2, 5, 4);
+  c.fillStyle = '#ffec27';                    // casco
+  c.fillRect(2, -1, 2, 2);
+  c.fillStyle = car.dark;                     // alerón trasero
+  c.fillRect(-15, -6, 3, 12);
 }
 
 function box(x, y, w, h) {
@@ -1265,14 +1457,35 @@ function draw() {
   if (shake) { cx += (Math.random() - 0.5) * shake; cy += (Math.random() - 0.5) * shake; }
   cx = clampX(cx); cy = clampY(cy);
 
-  ctx.drawImage(g.canvas, cx, cy, VIEW_W, VIEW_H, 0, 0, VIEW_W, VIEW_H);
+  if (g.tiles) {
+    // Pista por bloques: se dibujan los visibles y se preparan los de alrededor
+    g.budget = 3;
+    const t0x = Math.floor(cx / TILE), t0y = Math.floor(cy / TILE);
+    const t1x = Math.floor((cx + VIEW_W) / TILE), t1y = Math.floor((cy + VIEW_H) / TILE);
+    ctx.fillStyle = r.t.def.theme.out;
+    for (let ty = t0y; ty <= t1y; ty++) for (let tx = t0x; tx <= t1x; tx++) {
+      const tile = getTile(g, tx, ty, r.frame < 2);
+      if (tile) ctx.drawImage(tile.canvas, tx * TILE - cx, ty * TILE - cy);
+      else ctx.fillRect(tx * TILE - cx, ty * TILE - cy, TILE, TILE);
+    }
+    for (let ty = t0y - 1; ty <= t1y + 1; ty++) for (let tx = t0x - 1; tx <= t1x + 1; tx++) getTile(g, tx, ty);
+    trimTiles(g);
+  } else {
+    ctx.drawImage(g.canvas, cx, cy, VIEW_W, VIEW_H, 0, 0, VIEW_W, VIEW_H);
+  }
 
   ctx.save();
   ctx.translate(-cx - g.ox, -cy - g.oy);
   if (r.mode === 'derby') drawPickups(r);
   if (r.t.pistons) for (const p of r.t.pistons) drawPiston(pistonPos(p, raceTimeMs()), p.ang);
-  for (const o of r.remotes.values()) drawCar(ctx, o);
-  if (r.car) drawCar(ctx, r.car);                // el mío encima
+  // Puentes: primero los coches de abajo, luego el tablero, luego los de arriba
+  const decks = g.decks || [];
+  const myLvl = r.car && decks.length ? levelAt(r.t, r.car.idx) : 0;
+  for (const o of r.remotes.values()) if (!o.lvl) drawCar(ctx, o);
+  if (r.car && !myLvl) drawCar(ctx, r.car);
+  for (const d of decks) ctx.drawImage(d.canvas, d.x0, d.y0);
+  for (const o of r.remotes.values()) if (o.lvl) drawCar(ctx, o);
+  if (r.car && myLvl) drawCar(ctx, r.car);       // el mío encima
   if (r.mode === 'derby') {
     const byId = new Map(snap.p.map(p => [p.id, p]));
     for (const [id, o] of r.remotes) drawDerbyExtras(o, byId.get(id));
@@ -1280,7 +1493,7 @@ function draw() {
   }
   ctx.font = "8px 'Press Start 2P', monospace";
   ctx.textAlign = 'center';
-  const lab = Math.round(20 * carScale());     // el nombre, justo encima del coche
+  const lab = isF1() ? 14 : Math.round(20 * carScale());     // el nombre, justo encima del coche
   for (const o of r.remotes.values()) {
     ctx.fillStyle = '#000';
     ctx.fillText(o.name, Math.round(o.x) + 1, Math.round(o.y) - lab);
@@ -1293,6 +1506,8 @@ function draw() {
     text(e.text, Math.round(e.x), Math.round(e.y - k * 40), e.size, e.color, 'center');
     ctx.globalAlpha = 1;
   }
+  // Pasarelas sobre la pista: por encima de todos los coches
+  for (const gt of g.gantries || []) ctx.drawImage(gt.canvas, gt.x0, gt.y0);
   ctx.restore();
 
   // Destello rojo al recibir un golpe
@@ -1374,7 +1589,7 @@ function drawHud(r) {
     const lapW = c ? 200 : 240, posX = c ? 124 : 160;
     box(12, 12, lapW, 78);
     text('VUELTA', 26, 26, 10, '#ffec27');
-    text(`${Math.min(LAPS, car.lapsDone + 1)}/${LAPS}`, 26, 46, 22);
+    text(`${Math.min(r.laps, car.lapsDone + 1)}/${r.laps}`, 26, 46, 22);
     text('POS', posX, 26, 10, '#ffec27');
     text(`${me}º`, posX, 46, 22, me === 1 ? '#00e436' : '#fff1e8');
 
@@ -1418,14 +1633,16 @@ function drawHud(r) {
     const sx = IS_TOUCH ? VIEW_W - sw - 12 : 12;
     const sy = IS_TOUCH ? rightY : VIEW_H - 70;
     box(sx, sy, sw, 58);
-    const kmh = Math.round(Math.abs(car.fwd) * 30);
+    const P = car.phys || PHYS, frac = Math.min(1, Math.abs(car.fwd) / P.maxSpeed);
+    const kmh = Math.round(Math.abs(car.fwd) * P.kmh);
     text(String(kmh).padStart(3, '0'), sx + 14, sy + 16, 22, car.surface === 2 ? '#ffa300' : '#fff1e8');
     text('KM/H', sx + sw - 70, sy + 24, 10, '#ffec27');
     if (car.turbo && r.frame % 20 < 14) text('TURBO', sx + sw - 14, sy + 8, 8, '#ffa300', 'right');
+    else if (P === F1) text('F1', sx + sw - 14, sy + 8, 8, '#83769c', 'right');
     const bw = sw - 28;
     ctx.fillStyle = '#000'; ctx.fillRect(sx + 14, sy + 46, bw, 6);
-    ctx.fillStyle = car.turbo ? '#ffa300' : kmh > 240 ? '#ff004d' : '#00e436';
-    ctx.fillRect(sx + 14, sy + 46, Math.round(bw * Math.min(1, Math.abs(car.fwd) / PHYS.maxSpeed)), 6);
+    ctx.fillStyle = car.turbo ? '#ffa300' : frac > 0.88 ? '#ff004d' : '#00e436';
+    ctx.fillRect(sx + 14, sy + 46, Math.round(bw * frac), 6);
   }
 
   // Clasificación en directo (solo las filas que caben; tú siempre sales)
@@ -1440,7 +1657,7 @@ function drawHud(r) {
     ctx.fillStyle = o.color;
     ctx.fillRect(24, ly + 12 + i * 18, 8, 8);
     text(`${pos} ${o.name}`, 40, ly + 11 + i * 18, 8, o.me ? '#ffec27' : '#fff1e8');
-    text(o.fin ? 'META' : `V${Math.min(LAPS, o.lp + 1)}`, 220, ly + 11 + i * 18, 8, o.fin ? '#00e436' : '#83769c', 'right');
+    text(o.fin ? 'META' : `V${Math.min(r.laps, o.lp + 1)}`, 220, ly + 11 + i * 18, 8, o.fin ? '#00e436' : '#83769c', 'right');
   });
 
   drawOverlays(r, c);
@@ -1475,7 +1692,7 @@ function drawOverlays(r, c) {
   const maxW = VIEW_W - 24;
   if (r.state === 'countdown' && snap.ph === 'countdown') {
     text(r.t.def.name, VIEW_W / 2, VIEW_H / 2 - 150, 28, r.t.def.color, 'center', maxW);
-    text(derby ? 'DEMOLICIÓN · ¡GANA EL ÚLTIMO EN PIE!' : `DIFICULTAD ${r.t.def.diff} · ${LAPS} VUELTAS`,
+    text(derby ? 'DEMOLICIÓN · ¡GANA EL ÚLTIMO EN PIE!' : r.t.def.real ? `${r.t.def.country} · FÓRMULA 1 · ${r.laps} VUELTAS` : `DIFICULTAD ${r.t.def.diff} · ${r.laps} VUELTAS`,
       VIEW_W / 2, VIEW_H / 2 - 108, 12, '#fff1e8', 'center', maxW);
     drawTrafficLight(lightsOn(), false);
     if (car) {
@@ -1615,7 +1832,7 @@ function showResults(s) {
     if (derby) {
       tr.innerHTML = name + `<td>${p.al ? p.hp + '%' : 'ELIMINADO'}</td><td>${p.ko || 0}</td>`;
     } else {
-      const time = p.fin ? fmtMs(p.t) : `VUELTA ${Math.min(LAPS, p.lp + 1)}/${LAPS}`;
+      const nl = s.nl || LAPS, time = p.fin ? fmtMs(p.t) : `VUELTA ${Math.min(nl, p.lp + 1)}/${nl}`;
       tr.innerHTML = name + `<td>${time}</td><td>${fmtMs(p.best)}</td>`;
     }
     body.appendChild(tr);
@@ -1637,6 +1854,31 @@ function showResults(s) {
 
 // ---------- Sala: tarjetas de pista ----------
 const cards = new Map();   // id -> { btn, votes }
+
+// Miniatura al estilo de los mapas oficiales de la F1: fondo negro y trazado de color
+function drawRealPreview(cv, t) {
+  const c = cv.getContext('2d');
+  const bw = t.bounds.maxX - t.bounds.minX, bh = t.bounds.maxY - t.bounds.minY, pad = 16;
+  const scale = Math.min((cv.width - 2 * pad) / bw, (cv.height - 2 * pad) / bh);
+  const ox = t.bounds.minX - (cv.width / scale - bw) / 2, oy = t.bounds.minY - (cv.height / scale - bh) / 2;
+  c.fillStyle = '#0b0b10';
+  c.fillRect(0, 0, cv.width, cv.height);
+  c.lineJoin = c.lineCap = 'round';
+  c.lineWidth = 9; c.strokeStyle = '#2a2a33'; tracePath(c, t, ox, oy, scale); c.stroke();
+  c.lineWidth = 3; c.strokeStyle = t.def.color; tracePath(c, t, ox, oy, scale); c.stroke();
+  // puente: el tramo de arriba se repinta encima
+  for (const cr of t.crossings) {
+    c.beginPath();
+    for (let k = -cr.B; k <= cr.B; k++) { const i = (cr.up + k + t.N) % t.N; const X = (t.xs[i] - ox) * scale, Y = (t.ys[i] - oy) * scale; k === -cr.B ? c.moveTo(X, Y) : c.lineTo(X, Y); }
+    c.lineWidth = 9; c.strokeStyle = '#2a2a33'; c.stroke();
+    c.lineWidth = 3; c.strokeStyle = t.def.color; c.stroke();
+  }
+  c.save();
+  c.translate((t.xs[0] - ox) * scale, (t.ys[0] - oy) * scale);
+  c.rotate(t.dir[0]);
+  c.fillStyle = '#fff1e8'; c.fillRect(-2, -7, 4, 14);
+  c.restore();
+}
 
 function drawPreview(cv, t) {
   const c = cv.getContext('2d');
@@ -1666,7 +1908,7 @@ function buildCards() {
   const list = $('trackList');
   list.innerHTML = '';
   cards.clear();
-  built.forEach((t, i) => {
+  built.filter(t => !t.def.real).forEach((t, i) => {
     const btn = document.createElement('button');
     btn.className = 'track';
     btn.style.setProperty('--c', t.def.color);
@@ -1678,6 +1920,7 @@ function buildCards() {
       <span class="stat">CURVAS: <b>${t.curves}</b> · CERRADAS: <b>${t.hairpins}</b></span>
       <span class="stat">LONGITUD: <b>${(t.length / 1000).toFixed(1)} KM</b> · ANCHO: <b>${t.def.width >= 160 ? 'AMPLIO' : t.def.width >= 135 ? 'MEDIO' : t.def.width >= 110 ? 'ESTRECHO' : 'MÍNIMO'}</b></span>
       ${t.cliffZones || t.traps ? `<span class="stat">ACANTILADOS: <b>${t.cliffZones}</b> · TRAMPAS: <b>${t.traps}</b></span>` : ''}
+      ${t.crossings.length ? '<span class="stat">CRUCE CON <b>PUENTE</b></span>' : ''}
       <span class="stat record">TU RÉCORD: <b></b></span>
       <span class="votes" hidden></span>`;
     drawPreview(btn.querySelector('canvas'), t);
@@ -1701,6 +1944,28 @@ function buildCards() {
     btn.addEventListener('click', () => onCardClick(a.id));
     list.appendChild(btn);
     cards.set(a.id, { btn, votes: btn.querySelector('.votes'), record: null });
+  });
+  // Pistas reales a escala (Fórmula 1)
+  const real = $('realList');
+  real.innerHTML = '';
+  built.filter(t => t.def.real).forEach(t => {
+    const d = t.def;
+    const btn = document.createElement('button');
+    btn.className = 'track real';
+    btn.style.setProperty('--c', d.color);
+    btn.innerHTML = `
+      <span class="diff">${d.diff} <span class="stars">${'★'.repeat(d.stars)}${'☆'.repeat(5 - d.stars)}</span></span>
+      <canvas width="260" height="170"></canvas>
+      <span class="tname">${d.name}</span>
+      <span class="stat">${d.country} · <b>${(d.lengthM / 1000).toFixed(3).replace('.', ',')} KM</b> · <b>${d.turns} CURVAS</b></span>
+      <span class="stat">FÓRMULA 1 · <b>500 KM/H</b> · <b>${REAL_LAPS} VUELTAS</b>${d.walls ? ' · <b>MUROS</b>' : ''}</span>
+      <span class="stat">${t.crossings.length ? 'CRUCE REAL CON <b>PUENTE</b> · ' : ''}PASARELAS: <b>${t.gantries.length}</b></span>
+      <span class="stat record">TU RÉCORD: <b></b></span>
+      <span class="votes" hidden></span>`;
+    drawRealPreview(btn.querySelector('canvas'), t);
+    btn.addEventListener('click', () => onCardClick(d.id));
+    real.appendChild(btn);
+    cards.set(d.id, { btn, votes: btn.querySelector('.votes'), record: btn.querySelector('.record b') });
   });
 }
 
@@ -1841,6 +2106,7 @@ function onSnapshot(s) {
         race.remotes.set(p.id, o);
       }
       o.fl = !!p.fl;                                              // cayendo por un acantilado
+      if (race.t.crossings && race.t.crossings.length) o.lvl = levelAt(race.t, ((Math.round(p.pg) % race.t.N) + race.t.N) % race.t.N);
       o.tb = !!p.tb;                                              // con turbo
       o.vx = (p.x - (o.tx ?? p.x)) / 2;
       o.vy = (p.y - (o.ty ?? p.y)) / 2;

@@ -47,6 +47,24 @@ La dificultad sube con el número de curvas, lo cerradas que son y el ancho de l
 
 `buildTrack` coloca la línea de meta (muestra 0) en el tramo más recto de la pista: busca la ventana de 75 muestras antes y 25 después con menos giro acumulado. Así la parrilla (hasta 12 coches, ~60 muestras detrás de la meta) y el arranque quedan en recta, sea cual sea el primer punto de control.
 
+### 4.1b Pistas reales a escala y Fórmula 1
+
+- `REAL_TRACKS` (en `tracks.js`): cada pista tiene sus `points` en coordenadas de la imagen del mapa oficial, `lengthM` (longitud real), `widthM` (ancho real), `runoff` (escapatoria en px; Bakú 8 = muros) y `car: 'f1'`. `buildTrack` escala el trazado para que la vuelta mida `lengthM · PX_PER_M` (5 px = 1 m) y redondea los picos del calco a un radio mínimo de 12 m.
+- **Calco:** se hizo con scripts (en el scratchpad, no en el repo): un primer trazo a mano, luego cada punto se ajusta en perpendicular al centro de la línea de color del mapa (rojo/azul/amarillo), ignorando las cajas verdes de DRS y rosas del speed trap; en Bakú se usó seguimiento continuo de la línea porque hay tramos muy juntos. Después se comprobó superponiendo el trazado sobre la imagen original.
+- **F1** (`F1` en `tracks.js`): punta 11,6 px/frame (500 km/h reales con `kmh = 43,2`), aceleración que cae al acercarse a la punta (`falloff`), frenada 0,12 px/frame² (~5 g), agarre lateral 0,08 px/frame² (~6 g): `turnRateFor` limita el giro a `latAcc / v`. `stepCar` usa `car.phys` (kart o F1) para todo.
+- **Vueltas:** el servidor usa `raceLaps` = 2 en pistas reales (4 en el resto) y lo manda en la instantánea (`nl`).
+
+### 4.1c Cruces con puente y pasarelas
+
+- `buildTrack` detecta los cruces: pares de muestras lejanas en la vuelta cuyos ejes se cortan. El tramo de arriba es el más cercano al punto `def.over`; `B` = muestras a cada lado que ocupa el puente (según ancho, escapatoria y ángulo del cruce).
+- **Nivel** de un coche: `levelAt(t, idx)` = 1 si está dentro del puente, 0 si no. Para los demás coches se calcula con su progreso (`pg`). Los coches de distinto nivel no chocan.
+- **Dibujo:** coches de nivel 0 → tablero del puente (sprite pre-dibujado con barandillas, `renderDeck`) → coches de nivel 1. La sombra del puente se pinta en la pista.
+- **Pasarelas** (pistas reales): 2 por pista, en los tramos más rectos lejos de la salida y de los cruces (`gantries`); se dibujan por encima de todos los coches.
+
+### 4.1d Dibujo por bloques
+
+Las pistas reales miden hasta ~11.000 × 6.000 px, y no caben en un lienzo. Las carreras usan bloques de 512 px (`makeTrackGfx`, `renderTile`) que se generan al entrar en pantalla (máx. 3 por frame, más un anillo alrededor para ir por delante) y se liberan los menos usados (máx. 36 en memoria). Cada bloque dibuja solo los tramos de pista que le tocan (`trackRuns`); las rayas discontinuas se alinean entre bloques con `lineDashOffset`. Las marcas de derrape se pintan en el bloque correspondiente. La arena de demolición sigue usando un solo lienzo.
+
 ### 4.2 Trazados con curvas circulares (`corners`)
 
 Además de `points` (spline Catmull-Rom, curvas suaves pero con el radio variando), una pista puede definirse con `corners: [[x, y, radio], ...]`. `filletPath` une las esquinas con rectas y redondea cada una con un arco de circunferencia tangente a los dos tramos (radio constante). Dos esquinas de 90° separadas 2·radio forman una horquilla semicircular. DEMENCIA usa este sistema; con `points` sus horquillas quedaban en pico (35-47 px en el vértice y casi rectas al lado), poco realistas.

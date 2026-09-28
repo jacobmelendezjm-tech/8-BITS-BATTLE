@@ -102,6 +102,22 @@ Petición: "demasiado difícil, no imposible pero que sea realmente un desafío 
 - Turbo para el último "hasta que alcance a los demás": interpretado como alcanzar al coche que tiene justo delante (se activa a > 25 muestras = 200 px, se apaga a < 8). Solo en carreras.
 - **Música:** el usuario pidió "My Own Summer" de Deftones en versión 8 bits. **No se hizo**: una versión 8 bits reproduce la melodía/riff con derechos de autor y además se publicaría en Vercel. En su lugar: chiptune **original** de estilo metal (Web Audio) + opción de poner un `public/music.mp3` propio (con permiso). Si vuelve a pedirlo, mantener la negativa y ofrecer el archivo propio.
 
+## Pistas reales a escala + F1 + puentes (2026-09-28)
+
+Petición: F1 que lleguen a 500 km/h, 5 mapas reales a escala de distinta dificultad (el usuario pasó imágenes de los mapas oficiales de Spa, Bakú, Suzuka, Barcelona y Monza) en una sección nueva "pistas reales a escala" donde estén los F1, y "a todos los mapas puentes por los que pasar por arriba y por abajo".
+
+**Decisiones del usuario (pregunta explícita):**
+- Puentes: **respetar los trazados reales** (solo Suzuka tiene cruce real; en las otras reales, pasarelas por encima) y **rediseñar las pistas inventadas** para que cada una tenga un cruce con puente.
+- Escala: **real, con 2 vueltas** en esa sección (no reducirlas).
+
+Decisiones de Claude: escala 5 px = 1 m; dificultad Monza < Barcelona < Spa < Suzuka < Bakú; F1 con agarre ~6 g y frenada ~5 g; turbo del último con F1 limitado a ×1,08 (~540 km/h); coche de F1 de 28 × 10 px con radio de choque 9.
+
+Cómo se calcaron: scripts `real-draft.js`, `pt/snap2.js` (ajuste perpendicular a la línea de color; modo `follow` para Bakú), `real-traced.json` en el scratchpad. Correcciones a mano: en Bakú las curvas 6 y 20 quedaban tocándose (creaban un cruce falso) → separadas; Barcelona tenía un pico de 7 m → redondeo automático a 12 m mínimo.
+
+Pruebas: simulación de 2 vueltas con F1 en las 5 (todas terminan; Monza llega a 497 km/h), dos navegadores en el cruce de Suzuka (no chocan entre niveles, cada uno ve al otro en su nivel). Para teletransportar coches en pruebas hay que ajustar también `progress`, porque el nivel de los demás se calcula con él.
+
+Costa Serpiente: la salida automática ("tramo más recto") caía en la recta nueva del bucle, bajo el puente → se fijó `start: [0, 0.85]`.
+
 ## Cuentas usadas
 
 - GitHub: `jacobmelendezjm-tech`

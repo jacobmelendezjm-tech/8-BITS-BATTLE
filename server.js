@@ -12,7 +12,7 @@ const path = require('path');
 const os = require('os');
 const dgram = require('dgram');
 const { WebSocketServer } = require('ws');
-const { TRACKS, ARENAS, DERBY, arenaInside } = require('./public/tracks.js');
+const { TRACKS, REAL_TRACKS, REAL_LAPS, ARENAS, DERBY, arenaInside } = require('./public/tracks.js');
 
 // ---------- Configuración ----------
 const PORT = Number(process.env.PORT) || 3000;
@@ -25,9 +25,10 @@ const FINISH_TIMEOUT = 45000;       // tras el primero en llegar, el resto tiene
 const END_SCREEN_MS = 12000;
 const NAME_MAX = 12;
 
-const TRACK_IDS = [...TRACKS, ...ARENAS].map(t => t.id);
+const TRACK_IDS = [...TRACKS, ...ARENAS, ...REAL_TRACKS].map(t => t.id);
+const isReal = id => REAL_TRACKS.some(t => t.id === id);
 const isArena = id => ARENAS.some(a => a.id === id);
-const placeName = id => [...TRACKS, ...ARENAS].find(t => t.id === id).name;
+const placeName = id => [...TRACKS, ...ARENAS, ...REAL_TRACKS].find(t => t.id === id).name;
 
 // Paleta tipo 8 bits para los coches
 const COLORS = [
@@ -79,6 +80,7 @@ let phase = 'lobby';         // lobby | voting | countdown | playing | ended
 let phaseStart = Date.now();
 let track = null;            // id de la pista (o arena) de la partida actual
 let mode = 'race';           // race | derby
+let raceLaps = LAPS;         // 4 vueltas; en las pistas reales a escala (F1), 2
 let pickups = [];            // demolición: botiquines y escudos en la arena
 let nextPickupId = 1;
 let nextHealAt = 0, nextShieldAt = 0;
@@ -106,6 +108,7 @@ function startCountdown(trackId) {
   if (!joined.length || !TRACK_IDS.includes(trackId)) return;
   track = trackId;
   mode = isArena(trackId) ? 'derby' : 'race';
+  raceLaps = isReal(trackId) ? REAL_LAPS : LAPS;
   pickups = [];
   hitCd.clear();
   raceId++;
@@ -291,6 +294,7 @@ function snapshot() {
     rid: raceId,
     tr: track,
     md: mode,
+    nl: raceLaps,
     votes: phase === 'voting' ? voteCounts() : null,
     p: [...players.values()].filter(p => p.joined).map(p => ({
       id: p.id, n: p.name, c: p.color, h: p.isHost, ig: p.inGame, v: !!p.vote,
@@ -389,13 +393,13 @@ wss.on('connection', (ws, req) => {
         p.pg = Math.round(num(m.pg));
         p.fl = !!m.fl;                                  // cayendo por un acantilado
         p.tb = !!m.tb;                                  // con turbo (va último)
-        if (!p.finished) p.lp = Math.max(0, Math.min(LAPS, Math.floor(num(m.lp))));
+        if (!p.finished) p.lp = Math.max(0, Math.min(raceLaps, Math.floor(num(m.lp))));
         if (typeof m.best === 'number' && m.best > 0) p.best = Math.round(m.best);
         break;
       case 'fin':          // ha cruzado la meta por última vez
         if (mode !== 'race' || !p.inGame || p.finished || phase !== 'playing' || m.rid !== raceId) return;
         p.finished = true;
-        p.lp = LAPS;
+        p.lp = raceLaps;
         p.finishTime = Date.now() - phaseStart;
         if (typeof m.best === 'number' && m.best > 0) p.best = Math.round(m.best);
         p.place = ++finishCount;

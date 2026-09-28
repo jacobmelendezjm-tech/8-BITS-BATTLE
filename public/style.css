@@ -167,6 +167,21 @@ button.secondary { background: #065ab5; box-shadow: inset -4px -4px 0 #1d2b53, 4
 .track .tname { color: var(--text); font-size: 12px; }
 .track .stat { color: var(--dim); font-size: 8px; }
 .track .stat b { color: var(--text); font-weight: normal; }
+/* Sección de pistas reales a escala */
+.section-title {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: #0b0b10;
+  border-left: 8px solid var(--red);
+  box-shadow: 4px 4px 0 #000;
+}
+.section-title span { color: var(--text); font-size: 16px; }
+.section-title small { color: var(--dim); font-size: 8px; line-height: 1.8; }
+.track.real { background: #15151c; }
+
 .track .votes {
   position: absolute;
   top: 44px;
