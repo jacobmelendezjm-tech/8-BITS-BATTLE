@@ -119,6 +119,17 @@ Pruebas: simulación de 2 vueltas con F1 en las 5 (todas terminan; Monza llega a
 
 Costa Serpiente: la salida automática ("tramo más recto") caía en la recta nueva del bucle, bajo el puente → se fijó `start: [0, 0.85]`.
 
+## Garaje: selección de coche (2026-09-28)
+
+Petición (con 5 fotos): "pantalla de selección de autos, estos van a estar en todos los mapas menos en los mapas de escala". Coches de las fotos: Nissan Skyline GT-R R34 (plata con franjas azules), Subaru Impreza WRC (azul, llantas doradas), Dodge Challenger Hellcat (gris), Toyota Supra MK4 (naranja con verde), VW Golf GTI TCR (gris con rojo).
+
+- Se usan en las pistas inventadas y en la arena; en las reales todos siguen con F1.
+- El garaje se abre solo tras poner el nombre (una vez por conexión); después, desde la sala con CAMBIAR COCHE. Se recuerda en localStorage.
+- Decisiones de Claude: el carácter de cada coche (R34 equilibrado; WRC el mejor en hierba y barro; Challenger el más rápido y pesado, pero derrapa; Supra rápido y estable; Golf ligero, el que mejor gira), fichas con 4 barras (velocidad, aceleración, manejo, peso), dibujos pixel art propios vistos desde arriba y sin logos, y que el peso cuente en los empujones de la arena.
+- Equilibrio simulado (`sim-cars.js` en el scratchpad): 4 de los 5 coches ganan en alguna pista (el R34, equilibrado, en ninguna, pero nunca es el último); desventaja media 1,9-2,9 %.
+- Bug encontrado al hacerlo: `buildTrack` tiene un 2º parámetro (física) y `[...].map(buildTrack)` le pasaba el índice → F1 no se aplicaba en las reales y perfiles NaN. Usar siempre `map(d => buildTrack(d))`.
+- Móvil: en vertical 2 columnas, en horizontal los 5 en fila (3 si la pantalla es estrecha); "¡LISTO!" siempre visible. En horizontal la cuenta atrás se apila bajo los botones de arriba (`shortView()`); antes el nombre de la pista quedaba tapado. El semáforo se subió para no tapar los coches de delante en la parrilla.
+
 ## Cuentas usadas
 
 - GitHub: `jacobmelendezjm-tech`

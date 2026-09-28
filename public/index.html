@@ -38,6 +38,19 @@
     </div>
   </section>
 
+  <!-- Garaje: elegir coche (tras poner el nombre y desde la sala) -->
+  <section id="garage" class="screen" hidden>
+    <div class="garage-head">
+      <h1 class="title small">ELIGE TU <span>COCHE</span></h1>
+      <p class="sub">PARA LAS PISTAS INVENTADAS Y LA ARENA · EN LAS PISTAS REALES A ESCALA SE CORRE CON FÓRMULA&nbsp;1</p>
+    </div>
+    <div id="carList" class="cars"></div>
+    <div class="garage-foot">
+      <button id="btnGarageDone">¡LISTO!</button>
+      <p class="tiny desk-only"><b class="arr">←</b> <b class="arr">→</b> PARA CAMBIAR · ENTER PARA ELEGIR</p>
+    </div>
+  </section>
+
   <!-- Sala: elegir / votar pista -->
   <section id="lobby" class="screen" hidden>
     <div class="layout">
@@ -64,6 +77,13 @@
         <div class="box addr">
           <div class="lbl">CONÉCTATE EN</div>
           <div class="addrList"></div>
+        </div>
+
+        <div class="box mycar">
+          <div class="lbl">TU COCHE</div>
+          <canvas id="myCarCanvas" width="240" height="110"></canvas>
+          <div id="myCarName" class="mycar-name"></div>
+          <button id="btnGarage" type="button" class="secondary">CAMBIAR COCHE</button>
         </div>
 
         <button id="btnMusicLobby" type="button" class="secondary btn-music"><span aria-hidden="true">♪</span> <span class="mlabel">MÚSICA: SÍ</span></button>

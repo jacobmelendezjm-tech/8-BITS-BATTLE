@@ -1,11 +1,11 @@
 # 8 BITS RACING
 
-Juego de carreras de 8 bits para el aula. Cada alumno conduce su coche desde el navegador; el equipo del profesor hace de servidor por WebSockets. Tres tipos de partida: **carrera** con karts en pistas inventadas (4 vueltas), **pistas reales a escala** con Fórmula 1 (2 vueltas) y **demolición** estilo Wreckfest (gana el último que quede en pie).
+Juego de carreras de 8 bits para el aula. Cada alumno conduce su coche desde el navegador; el equipo del profesor hace de servidor por WebSockets. Tres tipos de partida: **carrera** en pistas inventadas con 5 coches a elegir (4 vueltas), **pistas reales a escala** con Fórmula 1 (2 vueltas) y **demolición** estilo Wreckfest (gana el último que quede en pie).
 
 ## Arrancar (equipo del profesor)
 1. Doble clic en `INICIAR.bat` (o ejecuta `npm install` y después `npm start`).
 2. Se abre `http://localhost:3000`. Escribe tu nombre para entrar como **host**; en esa misma pantalla aparece la dirección para los alumnos.
-3. Los alumnos abren en su navegador `http://TU_IP:3000`, escriben su nombre y pulsan **¡A CORRER!**
+3. Los alumnos abren en su navegador `http://TU_IP:3000`, escriben su nombre, pulsan **¡A CORRER!** y eligen su coche en el **garaje**.
 
 **Nadie entra a la sala ni a ningún mapa sin haberse unido con su nombre**, tampoco el host. Quien abre la página a mitad de una partida ve primero la pantalla de nombre.
 4. Se elige la pista y empieza la carrera (ver abajo).
@@ -15,6 +15,21 @@ La primera vez, Windows pedirá permiso en el firewall para Node.js: marca **Red
 ## Elección de pista o arena
 - **1 o 2 pilotos**: la pista la elige el host haciendo clic en una de las tarjetas.
 - **3 o más pilotos**: el host pulsa **ABRIR VOTACIÓN**; cada piloto vota (puede cambiar su voto). La votación dura 15 s o termina antes si ya han votado todos. Gana la más votada; si hay empate, se sortea entre las empatadas.
+
+## Garaje: elige tu coche
+Nada más entrar con tu nombre se abre el garaje. El coche elegido se usa en las **pistas inventadas** y en la **arena de demolición**; en las **pistas reales a escala** todos corren con **Fórmula 1**. Se puede cambiar en la sala con **CAMBIAR COCHE** (no a mitad de carrera) y el navegador lo recuerda para la próxima vez. En la lista de pilotos se ve qué coche lleva cada uno.
+
+| Coche | Carácter | Punta | Aceleración | Manejo | Peso |
+|---|---|---|---|---|---|
+| NISSAN SKYLINE GT-R R34 | Equilibrado, tracción total | 270 km/h | 4/5 | 4/5 | 3/5 |
+| SUBARU IMPREZA WRC | Rally: el que menos pierde en hierba y barro | 259 km/h | 5/5 | 4/5 | 3/5 |
+| DODGE CHALLENGER HELLCAT | Muscle car: el más rápido, pero derrapa | 286 km/h | 5/5 | 2/5 | 5/5 |
+| TOYOTA SUPRA MK4 | Rápido y estable | 281 km/h | 3/5 | 3/5 | 3/5 |
+| VOLKSWAGEN GOLF GTI TCR | Ligero: el que mejor gira | 254 km/h | 3/5 | 5/5 | 1/5 |
+
+- En las simulaciones cada coche tiene su pista: el Challenger gana en las rectas de VALLE VERDE, el Supra en COSTA SERPIENTE, el Golf en las curvas de INFIERNO y el Impreza en DEMENCIA (barro). El R34 no gana en ninguna, pero tampoco es nunca el último.
+- El **peso** cuenta en la arena: un coche pesado empuja más y sale menos despedido.
+- Controles del garaje: clic o toque en una tarjeta para elegir (doble clic: elegir y salir) y **¡LISTO!**. En el ordenador también **←/→** (o **A/D**) y **Enter**.
 
 ## Pistas
 | Pista | Dificultad | Curvas | Curvas cerradas | Ancho | Puente |
@@ -81,5 +96,6 @@ Se elige como una pista más (la tarjeta rosa de la sala). Arena ovalada cerrada
 - `server.js`: `COUNTDOWN_MS` (semáforo, 5 s), `LAPS` (vueltas), `HOST_PICK_MAX` (hasta cuántos pilotos elige el host), `VOTE_MS`, `FINISH_TIMEOUT`, `PORT`.
 - `public/tracks.js`: los puntos de cada pista, su ancho, colores y la física del coche (`PHYS`). Una pista puede tener `cliffs`, `oil`, `mud` y `pistons` (ver DEMENCIA), y definirse con `points` (curva suave) o con `corners` `[x, y, radio]` (rectas + arcos circulares).
 - `public/tracks.js` → `REAL_TRACKS` (pistas reales: puntos calcados, longitud y ancho reales en metros, escapatoria, dificultad), `REAL_LAPS` (2), `F1` (física del Fórmula 1) y `PX_PER_M` (escala).
+- `public/tracks.js` → `CARS`: los 5 coches del garaje (multiplicadores de punta, aceleración y giro sobre `PHYS`, derrape `grip`, `weight`, `offroad`, largo del dibujo y las barras de la ficha `stats`). `carPhysFor(id)` da la física de cada uno. Los dibujos están en `CAR_ART` (`client.js`).
 - `public/client.js`: `TURBO` (cuánto más rápido va el último y a qué distancia se activa/desactiva) y la música (`BASS`, `LEAD`, `SONG`, `tempo`).
 - `public/tracks.js` → `DERBY`: reglas del modo demolición (vida, daño de cada golpe y velocidad a partir de la que es fuerte, botiquines, escudos, tiempo límite, tamaño de los coches en la arena `CAR_SCALE`). `ARENAS`: forma de la arena y sus pilares.

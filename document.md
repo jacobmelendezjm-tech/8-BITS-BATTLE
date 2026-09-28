@@ -11,22 +11,22 @@ Así la conducción es inmediata aunque haya latencia (importante en el modo onl
 | Archivo | Qué hace |
 |---|---|
 | `server.js` | Servidor HTTP + WebSocket: sala, host, elección/votación de pista, salida, llegada y resultados |
-| `public/tracks.js` | Definición de las 3 pistas, spline, física compartida (`PHYS`) y localización del coche en la pista. Lo usan el navegador y el servidor |
-| `public/client.js` | Pantallas (entrada, sala, carrera), física del coche propio, dibujo, HUD, controles (teclado y táctiles), sonido, red |
+| `public/tracks.js` | Definición de las pistas (inventadas y reales), spline, física compartida (`PHYS`, `F1`, coches del garaje `CARS`/`carPhysFor`), arena de demolición y localización del coche en la pista. Lo usan el navegador y el servidor |
+| `public/client.js` | Pantallas (entrada, garaje, sala, carrera), física del coche propio, dibujo, HUD, controles (teclado y táctiles), sonido, red |
 | `public/index.html`, `public/style.css` | Interfaz |
 | `INICIAR.bat` | Instala Node si falta, instala dependencias y arranca el servidor |
 
 ## 3. Fases de la partida (servidor)
 
 ```
-lobby ──(host elige, ≤2 pilotos)──────────────► countdown (4 s) ──► playing ──► ended (12 s) ──► lobby
+lobby ──(host elige, ≤2 pilotos)──────────────► countdown (5 s) ──► playing ──► ended (12 s) ──► lobby
   └──(host abre votación, ≥3 pilotos)──► voting (15 s o todos votan) ─┘
 ```
 
 - **lobby**: los pilotos entran con su nombre. Con 1-2 pilotos el host hace clic en una pista (`pick`). Con 3 o más, el host abre la votación (`voteStart`).
 - **voting**: cada piloto vota (`vote`, puede cambiarlo). Se cierra a los 15 s o cuando han votado todos. Gana la más votada; empates → sorteo. Si durante la votación quedan 2 pilotos o menos, se vuelve a `lobby` para que elija el host.
-- **countdown**: el servidor asigna a cada piloto una casilla de la parrilla (orden aleatorio). El cliente muestra el nombre de la pista y 3, 2, 1.
-- **playing**: cada cliente conduce y cuenta sus vueltas. Al completar 4 manda `fin`; el servidor guarda el tiempo y el puesto. Termina cuando todos llegan o 45 s después del primero.
+- **countdown**: el servidor asigna a cada piloto una casilla de la parrilla (orden aleatorio). El cliente muestra el nombre de la pista y el semáforo.
+- **playing**: cada cliente conduce y cuenta sus vueltas. Al completar sus vueltas (4, o 2 en pistas reales) manda `fin`; el servidor guarda el tiempo y el puesto. Termina cuando todos llegan o 45 s después del primero.
 - **ended**: tabla de resultados; los que no terminaron se ordenan por distancia recorrida.
 
 ## 4. Las pistas (`tracks.js`)
@@ -106,12 +106,24 @@ Una pista puede definir `cliffs`, `oil`, `mud` y `pistons`. Se colocan con el í
 - **Fin:** queda 1 vivo (o ninguno), o se acaban los 3 minutos. Clasificación: vivos por vida; después, eliminados del último en caer al primero.
 - **Mensajes nuevos:** cliente→servidor `hit` (`rid, target, dmg`). En la instantánea: `md` (modo), por jugador `hp, al, ko, kt, sh`, y `pk` (objetos), `nh`/`ns` (ms hasta los próximos). Eventos: `dmg`, `block`, `heal`, `shield`, `ko`, `spawn`.
 
+## 4d. Garaje y coches
+
+- **`CARS`** (`tracks.js`): 5 coches (R34, Impreza WRC, Challenger, Supra, Golf) con multiplicadores sobre `PHYS` (`speed`, `accel`, `turn`), `grip` (fracción de la velocidad lateral que se conserva en cada frame: más alto = derrapa más; Challenger 0,86, Golf 0,75), `weight`, `offroad` (WRC: en hierba y barro llega más rápido y frena menos: `grassMax` ×1,35, `grassAccel`, `grassDrag`), `len` (largo del dibujo) y `stats` (barras de la ficha, 1-5). `carPhysFor(id)` devuelve el objeto de física completo con `model`.
+- **Dónde se usan:** `makeCar(t, g, color, model)` usa `F1` en las pistas reales y `carPhysFor(model)` en las inventadas; `makeDerbyCar` usa `carPhysFor(model)` (más `DERBY.CAR_SCALE`). El peso solo cuenta en la arena: al empujar, `k = 1,3 · m_otro / (m_mío + m_otro)` (a igual peso 0,65, como antes).
+- **Servidor:** `p.car` se valida con `validCar` (si no es válido, el primero). Llega en `join` y en el mensaje `car` (solo unido y fuera de carrera) y va en la instantánea de cada piloto (`car`). Los demás navegadores dibujan cada coche remoto con su modelo y usan su peso en los choques.
+- **Pantallas** (`onSnapshot`): sin nombre → entrada; tras el primer `joined` de la conexión → garaje (`garageOpen`); si hay carrera y yo corro en ella → carrera (cierra el garaje); garaje abierto → garaje (quien está en el garaje no entra a mirar una carrera ajena); si no → sala. La elección se guarda en `localStorage` (`8bits-racing.car`). Teclas del garaje: ←/→ o A/D, Enter o Espacio.
+- **Dibujo:** `CAR_ART[modelo]` pinta cada coche visto desde arriba con rectángulos (sin logos), con ayudas comunes (`carShadow`, `carWheels`, `carBody`, `carGlass`, `carLights`). `drawCarPreview` los pinta en las tarjetas del garaje y en el recuadro "TU COCHE" de la sala.
+- **Equilibrio** (simulación de 4 vueltas a ritmo máximo por coche y pista, con el perfil de velocidad de cada uno): Challenger gana en VALLE VERDE, Supra en COSTA, Golf en INFIERNO y WRC en DEMENCIA; el R34 no gana en ninguna, pero nunca es el último; desventaja media entre 1,9 % y 2,9 %.
+- **Ojo:** `buildTrack(def, physOverride)` tiene un segundo parámetro. No usar `lista.map(buildTrack)`, porque `map` le pasa el índice como física (así se rompió: las reales no usaban F1 y los perfiles de velocidad salían NaN). Usar `lista.map(d => buildTrack(d))`.
+- **Vista baja** (móvil en horizontal, `shortView()` = `VIEW_H < 560`): el nombre de la pista, el subtítulo, el semáforo y "TU COCHE" se apilan justo debajo de los botones de arriba, más pequeños.
+
 ## 5. Protocolo de mensajes
 
 ### Cliente → servidor
 | `t` | Datos | Quién |
 |---|---|---|
-| `join` | `name` | cualquiera |
+| `join` | `name, car` | cualquiera |
+| `car` | `car` | piloto unido, fuera de carrera (garaje) |
 | `pick` | `track` | host, en `lobby`, con ≤2 pilotos |
 | `voteStart` | — | host, en `lobby`, con ≥3 pilotos |
 | `vote` | `track` | piloto, en `voting` |
@@ -123,11 +135,11 @@ Una pista puede definir `cliffs`, `oil`, `mud` y `pistons`. Se colocan con el í
 - `welcome`: id, si es host, IPs, vueltas, límite de pilotos para que elija el host. (Ser host no sirve de nada hasta unirse con nombre: el servidor exige `joined` para elegir, votar o terminar, y el cliente no enseña la sala ni los mapas sin nombre.)
 - `joined`: nombre definitivo (sin repetir).
 - `host`: pasas a ser host (online: eres el primero en unirte con nombre, o el anterior host se desconectó).
-- `s` (30/s): fase, tiempo restante, id de carrera `rid`, pista, recuento de votos, pilotos (posición, vuelta, progreso, llegada), resultados y eventos (`voted`, `fin`).
+- `s` (30/s): fase, tiempo restante, id de carrera `rid`, pista, recuento de votos, pilotos (coche, posición, vuelta, progreso, llegada), resultados y eventos (`voted`, `fin`).
 
 ## 6. Cómo modificar el juego
 
 - **Número de vueltas**: `LAPS` en `server.js` (se envía a los clientes).
 - **Regla host/votación**: `HOST_PICK_MAX` en `server.js`.
 - **Nueva pista**: añade un objeto a `TRACKS` en `public/tracks.js` con `id`, `name`, `diff`, `color`, `width`, `theme` y `points`. Evita que dos tramos queden a menos de `width + 2·RUNOFF` de distancia.
-- **Manejo del coche**: `PHYS` en `public/tracks.js`.
+- **Manejo del coche**: `PHYS` en `public/tracks.js` (base) y `CARS` (lo que cambia cada coche del garaje).

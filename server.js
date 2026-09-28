@@ -12,7 +12,7 @@ const path = require('path');
 const os = require('os');
 const dgram = require('dgram');
 const { WebSocketServer } = require('ws');
-const { TRACKS, REAL_TRACKS, REAL_LAPS, ARENAS, DERBY, arenaInside } = require('./public/tracks.js');
+const { TRACKS, REAL_TRACKS, REAL_LAPS, ARENAS, DERBY, CARS, arenaInside } = require('./public/tracks.js');
 
 // ---------- Configuración ----------
 const PORT = Number(process.env.PORT) || 3000;
@@ -27,6 +27,8 @@ const NAME_MAX = 12;
 
 const TRACK_IDS = [...TRACKS, ...ARENAS, ...REAL_TRACKS].map(t => t.id);
 const isReal = id => REAL_TRACKS.some(t => t.id === id);
+const CAR_IDS = CARS.map(c => c.id);
+const validCar = id => (CAR_IDS.includes(id) ? id : CAR_IDS[0]);
 const isArena = id => ARENAS.some(a => a.id === id);
 const placeName = id => [...TRACKS, ...ARENAS, ...REAL_TRACKS].find(t => t.id === id).name;
 
@@ -297,7 +299,7 @@ function snapshot() {
     nl: raceLaps,
     votes: phase === 'voting' ? voteCounts() : null,
     p: [...players.values()].filter(p => p.joined).map(p => ({
-      id: p.id, n: p.name, c: p.color, h: p.isHost, ig: p.inGame, v: !!p.vote,
+      id: p.id, n: p.name, c: p.color, h: p.isHost, ig: p.inGame, v: !!p.vote, car: p.car,
       ...(p.inGame ? {
         g: p.grid, x: p.x, y: p.y, a: p.a, pg: p.pg, lp: p.lp, fl: p.fl ? 1 : 0, tb: p.tb ? 1 : 0,
         fin: p.finished, ft: p.finishTime, pl: p.place,
@@ -353,6 +355,7 @@ wss.on('connection', (ws, req) => {
     inGame: false, grid: 0, x: 0, y: 0, a: 0, pg: 0, lp: 0,
     finished: false, finishTime: null, place: 0, best: null, vote: null,
     hp: 0, alive: false, kills: 0, shieldUntil: 0, koTime: null,
+    car: CAR_IDS[0],               // coche elegido en el garaje
   };
   players.set(p.id, p);
 
@@ -370,6 +373,7 @@ wss.on('connection', (ws, req) => {
       case 'join':
         if (p.joined) return;
         p.name = cleanName(m.name);
+        p.car = validCar(m.car);
         p.joined = true;
         ws.send(JSON.stringify({ t: 'joined', name: p.name }));
         if (!hasHost()) makeHost(p);
@@ -406,6 +410,9 @@ wss.on('connection', (ws, req) => {
         if (!firstFinish) firstFinish = Date.now();
         events.push({ k: 'fin', n: p.name, c: p.color, pl: p.place });
         console.log(`  # ${p.name} llega ${p.place}º`);
+        break;
+      case 'car':          // cambia de coche en el garaje (no a mitad de carrera)
+        if (p.joined && !p.inGame) p.car = validCar(m.car);
         break;
       case 'hit':          // demolición: mi coche ha golpeado a otro
         derbyHit(p, m);

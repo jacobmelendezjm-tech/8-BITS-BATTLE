@@ -167,6 +167,87 @@ button.secondary { background: #065ab5; box-shadow: inset -4px -4px 0 #1d2b53, 4
 .track .tname { color: var(--text); font-size: 12px; }
 .track .stat { color: var(--dim); font-size: 8px; }
 .track .stat b { color: var(--text); font-weight: normal; }
+/* Garaje: selección de coche */
+#garage { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.garage-head { text-align: center; }
+.garage-head .sub { color: var(--dim); font-size: 9px; line-height: 1.8; margin: 8px 0 0; }
+.cars {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  width: min(1180px, 100%);
+}
+.carcard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px;
+  text-align: left;
+  color: var(--text);
+  background: var(--panel);
+  border: 4px solid #2a2a33;
+  box-shadow: 4px 4px 0 #000;
+}
+.carcard:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 #000; }
+.carcard.sel { border-color: var(--accent); background: #26375f; }
+.carcard canvas { width: 100%; height: auto; image-rendering: pixelated; border: 2px solid #000; }
+.carcard .cname { font-size: 10px; line-height: 1.5; }
+.carcard .cdesc { font-size: 8px; line-height: 1.6; color: var(--accent); }
+.cstat { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 7px; color: var(--dim); }
+.pips { display: inline-flex; gap: 3px; flex: none; }
+.pips i { width: 10px; height: 8px; background: #16161a; box-shadow: 0 0 0 1px #000; }
+.pips i.on { background: var(--green); }
+.carcard .csel {
+  display: none;
+  position: absolute; top: 16px; right: 16px;
+  background: var(--accent); color: #000; font-size: 8px; padding: 4px 6px;
+  box-shadow: 2px 2px 0 #000;
+}
+.carcard.sel .csel { display: block; }
+.garage-foot { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+@media (max-width: 520px) {
+  .cars { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .carcard { padding: 7px; gap: 5px; }
+  .carcard .cname { font-size: 8px; }
+  .carcard .cdesc { font-size: 7px; }
+  .cstat { font-size: 6px; }
+  .pips i { width: 7px; height: 6px; }
+  .carcard .csel { top: 10px; right: 10px; font-size: 6px; padding: 3px 4px; }
+}
+/* Pantallas bajas (móvil en horizontal): todo más compacto; con anchura, los 5 coches en fila */
+@media (max-height: 520px) and (min-width: 521px) {
+  #garage { gap: 10px; }
+  .garage-head .title.small { font-size: 22px; }
+  .garage-head .sub { font-size: 7px; margin-top: 4px; }
+  .cars { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .carcard { padding: 6px; gap: 4px; }
+  .carcard .cname { font-size: 7px; }
+  .carcard .cdesc { font-size: 6px; }
+  .cstat { font-size: 6px; }
+  .pips { gap: 2px; }
+  .pips i { width: 6px; height: 5px; }
+  .carcard .csel { top: 9px; right: 9px; font-size: 6px; padding: 3px 4px; }
+}
+@media (max-height: 520px) and (min-width: 740px) {
+  .cars { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+.garage-foot button { width: auto; padding: 14px 44px; font-size: 14px; }
+/* En móvil (vertical u horizontal) el botón "¡LISTO!" siempre a la vista */
+@media (max-width: 520px), (max-height: 520px) {
+  .garage-foot {
+    position: sticky; bottom: 0; width: 100%; z-index: 5;
+    padding: 10px 0 calc(env(safe-area-inset-bottom, 0px) + 10px);
+    background: linear-gradient(transparent, #000 30%);
+  }
+  .garage-foot button { padding: 10px 36px; font-size: 12px; }
+}
+.mycar { display: flex; flex-direction: column; gap: 8px; }
+.mycar canvas { width: 100%; height: auto; image-rendering: pixelated; border: 2px solid #000; }
+.mycar-name { font-size: 9px; color: var(--text); line-height: 1.6; }
+.mycar button { font-size: 10px; padding: 10px; }
+.pcar { color: var(--dim); font-size: 7px; }
+
 /* Barritas de vida (demolición, tabla de resultados) */
 .bars { display: inline-flex; gap: 2px; vertical-align: -1px; }
 .bars i { width: 9px; height: 10px; background: #2a2233; box-shadow: 0 0 0 1px #000; }

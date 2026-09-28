@@ -49,6 +49,38 @@ function turnRateFor(P, v) {
 function turnRate(v) { return turnRateFor(PHYS, v); }
 const carPhys = def => (def.car === 'f1' ? F1 : PHYS);
 
+// ============================================================
+//  COCHES ELEGIBLES (pistas inventadas y arena; en las pistas reales
+//  a escala se corre con F1). Multiplicadores sobre la física base de
+//  los karts (PHYS). Diferencias moderadas: cada coche gana en algo y
+//  pierde en otra cosa. grip = cuánto derrapa (más bajo = más agarre).
+//  stats = barras que se enseñan en la pantalla de selección (1-5).
+// ============================================================
+const CARS = [
+  { id: 'r34', name: 'NISSAN SKYLINE GT-R R34', short: 'GT-R R34', desc: 'EQUILIBRADO · TRACCIÓN TOTAL',
+    speed: 1.0, accel: 1.05, turn: 1.0, grip: 0.78, weight: 1.1, len: 38, stats: [4, 4, 4, 3] },
+  { id: 'wrc', name: 'SUBARU IMPREZA WRC', short: 'IMPREZA WRC', desc: 'RALLY · EL MEJOR FUERA DEL ASFALTO',
+    speed: 0.96, accel: 1.08, turn: 1.06, grip: 0.78, weight: 1.0, offroad: true, len: 36, stats: [3, 5, 4, 3] },
+  { id: 'challenger', name: 'DODGE CHALLENGER HELLCAT', short: 'CHALLENGER', desc: 'MUSCLE CAR · EL MÁS RÁPIDO, PERO DERRAPA',
+    speed: 1.06, accel: 1.12, turn: 0.9, grip: 0.86, weight: 1.35, len: 42, stats: [5, 5, 2, 5] },
+  { id: 'supra', name: 'TOYOTA SUPRA MK4', short: 'SUPRA MK4', desc: 'RÁPIDO Y ESTABLE',
+    speed: 1.04, accel: 1.0, turn: 0.97, grip: 0.8, weight: 1.05, len: 38, stats: [5, 3, 3, 3] },
+  { id: 'golf', name: 'VOLKSWAGEN GOLF GTI TCR', short: 'GOLF GTI', desc: 'LIGERO · EL QUE MEJOR GIRA',
+    speed: 0.94, accel: 1.0, turn: 1.12, grip: 0.75, weight: 0.85, len: 32, stats: [2, 3, 5, 1] },
+];
+const CAR_STATS = ['VELOCIDAD', 'ACELERACIÓN', 'MANEJO', 'PESO'];
+
+function carPhysFor(id) {
+  const m = CARS.find(c => c.id === id) || CARS[0];
+  return {
+    ...PHYS, model: m.id,
+    maxSpeed: PHYS.maxSpeed * m.speed, accel: PHYS.accel * m.accel, turn: PHYS.turn * m.turn,
+    grip: m.grip, weight: m.weight,
+    // el de rally pierde mucho menos al salirse a la hierba o la tierra
+    grassMax: PHYS.grassMax * (m.offroad ? 1.35 : 1), grassAccel: m.offroad ? 0.85 : 0.55, grassDrag: m.offroad ? 0.985 : 0.975,
+  };
+}
+
 const TRACKS = [
   {
     id: 'normal',
@@ -363,10 +395,10 @@ function filletPath(C) {
   return out;
 }
 
-function buildTrack(def) {
+function buildTrack(def, physOverride) {
   let P = def.corners ? def.corners.map(([x, y]) => [x, y]) : def.points;
   const n = P.length;
-  const CP = carPhys(def);
+  const CP = physOverride || carPhys(def);
   if (def.widthM) def.width = def.widthM * PX_PER_M;
   const runoff = def.runoff ?? RUNOFF;
 
@@ -761,7 +793,7 @@ function arenaInside(a, x, y, margin) {
 if (typeof module !== 'undefined') {
   module.exports = {
     TRACKS, REAL_TRACKS, REAL_LAPS, PHYS, F1, PX_PER_M, SAMPLE_DS, RUNOFF, buildTrack, locate, angDiff, turnRate,
-    turnRateFor, carPhys, levelAt, pistonPos, crPoint,
+    turnRateFor, carPhys, levelAt, pistonPos, crPoint, CARS, CAR_STATS, carPhysFor,
     DERBY, ARENAS, arenaBounds, arenaSpawn, arenaCollide, arenaInside,
   };
 }

@@ -89,7 +89,7 @@ document.addEventListener('webkitfullscreenchange', resizeView);
 resizeView();
 const compactHud = () => VIEW_W < 760;
 
-const built = [...TRACKS, ...REAL_TRACKS].map(buildTrack);
+const built = [...TRACKS, ...REAL_TRACKS].map(d => buildTrack(d));   // ojo: map() pasaría el índice como 2º parámetro
 const trackById = id => built.find(t => t.def.id === id);
 const arenaById = id => ARENAS.find(a => a.id === id);
 const buildArena = a => ({ def: a, arena: a, bounds: arenaBounds(a) });
@@ -132,6 +132,10 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); } catch {} },
 };
 const bestKey = id => `8bits-racing.best.${id}`;
+const carById = id => CARS.find(c => c.id === id) || CARS[0];
+let myCar = carById(store.get('8bits-racing.car')).id;   // coche elegido en el garaje
+let garageOpen = false;                                   // pantalla de selección abierta
+let hadJoined = false;                                    // ya entró alguna vez (al reconectar no se reabre el garaje)
 
 // ---------- Sonido (WebAudio, muy simple) ----------
 const sound = {
@@ -312,6 +316,12 @@ function syncKeys() {
 addEventListener('keydown', e => {
   if (e.target instanceof HTMLInputElement) return;
   sound.init();
+  if (currentScreen === 'garage') {
+    const i = CARS.findIndex(c => c.id === myCar);
+    if (e.code === 'ArrowRight' || e.code === 'KeyD') { chooseCar(CARS[(i + 1) % CARS.length].id); e.preventDefault(); return; }
+    if (e.code === 'ArrowLeft' || e.code === 'KeyA') { chooseCar(CARS[(i - 1 + CARS.length) % CARS.length].id); e.preventDefault(); return; }
+    if (e.code === 'Enter' || e.code === 'Space') { closeGarage(); e.preventDefault(); return; }
+  }
   if (KEYMAP[e.code]) {
     held.add(e.code);
     syncKeys();
@@ -873,24 +883,25 @@ function drawArenaPreview(cv, a) {
 }
 
 // ---------- Física de mi coche ----------
-function makeCar(t, g, color) {
+function makeCar(t, g, color, model) {
   const s = gridSlot(t, g), i = s.idx;
+  const f1 = t.phys === F1;
   return {
-    color, dark: darken(color),
+    color, dark: darken(color), model: f1 ? null : carById(model).id,
     x: t.xs[i] + t.nx[i] * s.lat, y: t.ys[i] + t.ny[i] * s.lat,
     angle: t.dir[i], vx: 0, vy: 0, fwd: 0, lat: 0,
     idx: i, dist: Math.abs(s.lat), surface: 0,
     progress: -s.back,             // muestras recorridas (negativo = detrás de la meta)
     lapsDone: 0, lapStart: 0, lapTimes: [], bestLap: null,
     finished: false, finishFrame: null, wrongWay: 0, bumpCd: 0,
-    phys: t.phys,                  // kart o Fórmula 1
+    phys: f1 ? F1 : carPhysFor(model),   // Fórmula 1 o el coche elegido
   };
 }
 
-function makeDerbyCar(t, g, n, color) {
+function makeDerbyCar(t, g, n, color, model) {
   const sp = arenaSpawn(t.arena, g, n);
   return {
-    color, dark: darken(color),
+    color, dark: darken(color), model: carById(model).id, phys: carPhysFor(model),
     x: sp.x, y: sp.y, angle: sp.angle, vx: 0, vy: 0, fwd: 0, lat: 0,
     surface: 0, bumpCd: 0, wrongWay: 0,
     progress: 0, lapsDone: 0, lapStart: 0, lapTimes: [], bestLap: null, finished: false,
@@ -950,14 +961,14 @@ function stepCar(car, ctl) {
   if (ctl.throttle) {
     // F1: el empuje cae al acercarse a la punta (resistencia del aire)
     const fall = P.falloff && f > 0 ? 1 - P.falloff * Math.min(1, (f / top) ** 2) : 1;
-    f += P.accel * (grass ? 0.55 : 1) * ctl.throttle * (car.turbo ? TURBO.accel : 1) * fall;
+    f += P.accel * (grass ? (P.grassAccel || 0.55) : 1) * ctl.throttle * (car.turbo ? TURBO.accel : 1) * fall;
   }
   if (ctl.brake) {
     if (f > 0.15) f = Math.max(0, f - P.brake * ctl.brake);
     else f -= P.accel * (P.falloff ? 1.5 : 0.6) * ctl.brake;
   }
   if (!ctl.throttle && !ctl.brake) f *= P.falloff ? 0.994 : 0.985;
-  f *= grass ? 0.975 : car.surface === 1 ? 0.994 : (P.drag || 0.997);
+  f *= grass ? (P.grassDrag || 0.975) : car.surface === 1 ? 0.994 : (P.drag || 0.997);
   f = Math.max(-P.reverseMax, Math.min(top, f));
   if (grass && f > P.grassMax) f = Math.max(P.grassMax, f * 0.94);
   l *= car.oil > 0 ? 0.985 : grass ? 0.9 : (P.grip || 0.8);    // en aceite el coche resbala
@@ -1120,8 +1131,11 @@ function collideRemote(car, others, derby) {
     if (derby) {
       const rel = (car.vx - (o.vx || 0)) * nx + (car.vy - (o.vy || 0)) * ny;
       if (rel < 0) {
-        car.vx -= 0.65 * rel * nx;
-        car.vy -= 0.65 * rel * ny;
+        // cuanto más pesa el otro respecto a mí, más me empuja (a igual peso, 0,65)
+        const mMe = (car.phys && car.phys.weight) || 1, mO = o.weight || 1;
+        const k = 1.3 * mO / (mMe + mO);
+        car.vx -= k * rel * nx;
+        car.vy -= k * rel * ny;
       }
       // Solo cuenta como golpe nuevo si antes estabais separados: empujar
       // pegado a otro coche no le quita vida sin parar
@@ -1170,7 +1184,7 @@ function setupRace(s) {
     mini: derby
       ? renderArenaMinimap(t, small ? 150 : 190, small ? 120 : 150)
       : renderMinimap(t, small ? 150 : 190, small ? 120 : 150),
-    car: me ? (derby ? makeDerbyCar(t, me.g, racersCount, me.c) : makeCar(t, me.g, me.c)) : null,
+    car: me ? (derby ? makeDerbyCar(t, me.g, racersCount, me.c, me.car) : makeCar(t, me.g, me.c, me.car)) : null,
     remotes: new Map(),
     state: 'countdown', frame: 0, raceFrame: 0,
     banner: null, cam: { x: 0, y: 0 }, lastLit: 0, greenUntil: 0,
@@ -1377,12 +1391,13 @@ function drawCar(c, car) {
   if (k !== 1) c.scale(k, k);                 // arena: coches más grandes
   const f1 = isF1();
   if (car.turbo || car.tb) {                  // llamas del turbo por el tubo de escape
-    const fl = 8 + Math.random() * 10, bx = f1 ? -15 : -19;
+    const fl = 8 + Math.random() * 10, bx = f1 ? -15 : car.model ? -carById(car.model).len / 2 - 1 : -19;
     c.fillStyle = '#ff004d'; c.fillRect(bx - fl, -5, fl, 10);
     c.fillStyle = '#ffa300'; c.fillRect(bx - fl * 0.7, -4, fl * 0.7, 8);
     c.fillStyle = '#ffec27'; c.fillRect(bx - fl * 0.35, -2, fl * 0.35, 4);
   }
   if (f1) { drawF1Body(c, car); c.restore(); return; }
+  if (car.model && CAR_ART[car.model]) { CAR_ART[car.model](c); c.restore(); return; }
   c.fillStyle = 'rgba(0,0,0,.35)';            // sombra
   c.fillRect(-16, -8, 34, 20);
   c.fillStyle = '#111';                       // ruedas
@@ -1403,6 +1418,103 @@ function drawCar(c, car) {
   c.fillStyle = '#fff1e8';                    // faros
   c.fillRect(15, -7, 2, 4); c.fillRect(15, 3, 2, 4);
   c.restore();
+}
+
+// ---------- Coches elegibles: dibujo pixelado visto desde arriba (morro hacia +x) ----------
+// Inspirados en las fotos que pasó el usuario (sin logotipos de marca).
+function carShadow(c, len) { c.fillStyle = 'rgba(0,0,0,.35)'; c.fillRect(-len / 2 + 2, -7, len, 19); }
+function carWheels(c, fx, rx, w, hub) {                 // fx / rx: x de las ruedas delanteras / traseras
+  c.fillStyle = '#111';
+  for (const x of [fx, rx]) { c.fillRect(x, -10, w, 3); c.fillRect(x, 7, w, 3); }
+  if (hub) { c.fillStyle = hub; for (const x of [fx, rx]) { c.fillRect(x + 2, -10, w - 4, 1); c.fillRect(x + 2, 9, w - 4, 1); } }
+}
+function carBody(c, len, outline, color) {
+  c.fillStyle = outline; c.fillRect(-len / 2, -9, len, 18);
+  c.fillStyle = color; c.fillRect(-len / 2 + 1, -8, len - 2, 16);
+}
+function carGlass(c, x, w, y0 = -6, h = 12) {
+  c.fillStyle = '#1d2b53'; c.fillRect(x, y0, w, h);
+  c.fillStyle = 'rgba(41,173,255,.8)'; c.fillRect(x + w - 2, y0 + 1, 1, h - 2);
+}
+function carLights(c, x) { c.fillStyle = '#fff1e8'; c.fillRect(x, -7, 2, 3); c.fillRect(x, 4, 2, 3); }
+
+const CAR_ART = {
+  // Nissan Skyline GT-R R34: plata con franjas azules y gran alerón
+  r34(c) {
+    carShadow(c, 38); carWheels(c, 8, -14, 7);
+    carBody(c, 38, '#5f574f', '#c2c3c7');
+    c.fillStyle = '#e2e2e8'; c.fillRect(6, -7, 12, 14);
+    c.fillStyle = '#1e5fd8'; c.fillRect(-18, -4, 36, 2); c.fillRect(-18, 2, 36, 2);
+    for (const x of [-15, -9, -3, 3, 9]) { c.fillRect(x, -8, 3, 2); c.fillRect(x, 6, 3, 2); }
+    carGlass(c, 2, 4); carGlass(c, -10, 3, -5, 10);
+    c.fillStyle = '#16161a'; c.fillRect(-20, -9, 3, 18);
+    carLights(c, 17);
+  },
+  // Subaru Impreza WRC: azul con franjas amarillas, llantas doradas, toma de aire y alerón
+  wrc(c) {
+    carShadow(c, 36); carWheels(c, 7, -13, 7, '#ffec27');
+    carBody(c, 36, '#0d1f5a', '#1f47c4');
+    c.fillStyle = '#ffec27'; c.fillRect(-12, -8, 19, 2); c.fillRect(-12, 6, 19, 2);
+    c.fillStyle = '#29adff'; c.fillRect(-12, -6, 19, 1); c.fillRect(-12, 5, 19, 1);
+    c.fillStyle = '#16161a'; c.fillRect(9, -3, 5, 6);
+    c.fillStyle = '#0d1f5a'; c.fillRect(10, -2, 3, 4);
+    carGlass(c, 2, 4);
+    c.fillStyle = '#fff1e8'; c.fillRect(-7, -3, 5, 6);            // dorsal en el techo
+    c.fillStyle = '#ff7a00'; c.fillRect(-5, -2, 1, 4);
+    carGlass(c, -11, 3, -5, 10);
+    c.fillStyle = '#16161a'; c.fillRect(-19, -9, 3, 18);
+    c.fillStyle = '#1f47c4'; c.fillRect(-19, -9, 3, 2); c.fillRect(-19, 7, 3, 2);
+    carLights(c, 16);
+  },
+  // Dodge Challenger Hellcat: gris, capó largo con dos tomas de aire, pilotos de lado a lado
+  challenger(c) {
+    carShadow(c, 42); carWheels(c, 10, -16, 8);
+    carBody(c, 42, '#2a2a33', '#6f737c');
+    c.fillStyle = '#7d818a'; c.fillRect(5, -7, 15, 14);
+    c.fillStyle = '#16161a'; c.fillRect(11, -5, 5, 3); c.fillRect(11, 2, 5, 3);
+    carGlass(c, 1, 4);
+    c.fillStyle = '#5c6069'; c.fillRect(-9, -6, 10, 12);
+    carGlass(c, -12, 3, -5, 10);
+    c.fillStyle = '#16161a'; c.fillRect(-21, -8, 1, 16);
+    c.fillStyle = '#ff004d'; c.fillRect(-20, -7, 1, 14);
+    c.fillStyle = '#fff1e8'; for (const y of [-7, -4, 2, 5]) c.fillRect(20, y, 1, 2);
+  },
+  // Toyota Supra MK4: naranja con gráficos verdes y alerón plateado
+  supra(c) {
+    carShadow(c, 38); carWheels(c, 8, -14, 7, '#c2c3c7');
+    carBody(c, 38, '#ab3d00', '#ff7a00');
+    c.fillStyle = '#16161a'; c.fillRect(9, -5, 4, 2); c.fillRect(9, 3, 4, 2);
+    c.fillStyle = '#00e436'; c.fillRect(-15, -8, 10, 2); c.fillRect(-15, 6, 10, 2); c.fillRect(-11, -6, 5, 1); c.fillRect(-11, 5, 5, 1);
+    carGlass(c, 2, 4); carGlass(c, -10, 3, -5, 10);
+    c.fillStyle = '#5f574f'; c.fillRect(-17, -6, 2, 2); c.fillRect(-17, 4, 2, 2);
+    c.fillStyle = '#c2c3c7'; c.fillRect(-20, -10, 3, 20);
+    c.fillStyle = '#5f574f'; c.fillRect(-20, -10, 3, 1); c.fillRect(-20, 9, 3, 1);
+    carLights(c, 17);
+  },
+  // Volkswagen Golf GTI TCR: compacto gris, techo negro, panal en los laterales y línea roja delante
+  golf(c) {
+    carShadow(c, 32); carWheels(c, 6, -12, 7);
+    carBody(c, 32, '#2a2a33', '#5d6270');
+    c.fillStyle = '#4a4f5b';
+    for (let x = -13; x <= -3; x += 3) { c.fillRect(x, -8, 2, 2); c.fillRect(x + 1, -6, 2, 1); c.fillRect(x, 6, 2, 2); c.fillRect(x + 1, 5, 2, 1); }
+    carGlass(c, 4, 4);
+    c.fillStyle = '#2a2a33'; c.fillRect(-11, -6, 15, 12);
+    c.fillStyle = '#16161a'; c.fillRect(-14, -7, 3, 14);
+    c.fillStyle = '#ff004d'; c.fillRect(15, -6, 1, 12);
+    c.fillStyle = '#fff1e8'; c.fillRect(14, -7, 2, 2); c.fillRect(14, 5, 2, 2);
+  },
+};
+
+// Dibujo grande del coche (garaje y sala), sobre una plaza de aparcamiento
+function drawCarPreview(cv, id) {
+  const c = cv.getContext('2d'), W = cv.width, H = cv.height, len = carById(id).len;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.fillStyle = '#16161a'; c.fillRect(0, 0, W, H);
+  c.fillStyle = '#1f1f27';
+  for (let y = 0; y < H; y += 8) for (let x = (y / 8) % 2 ? 4 : 0; x < W; x += 8) c.fillRect(x, y, 4, 4);
+  c.fillStyle = '#ffec27'; c.fillRect(8, 6, W - 16, 3); c.fillRect(8, H - 9, W - 16, 3);
+  const k = Math.max(1, Math.floor(Math.min((W - 24) / (len + 6), (H - 26) / 22)));
+  c.save(); c.translate(Math.round(W / 2), Math.round(H / 2) + 1); c.scale(k, k); CAR_ART[id](c); c.restore();
 }
 
 // Fórmula 1 visto desde arriba: 28 x 10 px (5,6 x 2 m), ruedas descubiertas y alerones
@@ -1681,10 +1793,13 @@ function drawHud(r) {
   drawOverlays(r, c);
 }
 
+// Vista baja (móvil en horizontal): la cuenta atrás se apila justo debajo de los botones de arriba
+const shortView = () => VIEW_H < 560;
+
 // Semáforo de salida: 5 luces; se enciende una roja por segundo y al final todas verdes
 function drawTrafficLight(lit, green) {
-  const rad = compactHud() ? 17 : 20, gap = rad * 2 + 12, w = gap * 5 + 16, h = rad * 2 + 24;
-  const x = Math.round(VIEW_W / 2 - w / 2), y = Math.round(VIEW_H / 2 - 70);
+  const rad = shortView() ? 15 : compactHud() ? 17 : 20, gap = rad * 2 + 12, w = gap * 5 + 16, h = rad * 2 + 24;
+  const x = Math.round(VIEW_W / 2 - w / 2), y = shortView() ? 98 : Math.round(VIEW_H / 2 - 135);   // por encima de la parrilla
   ctx.fillStyle = '#000'; ctx.fillRect(x + 4, y + 4, w, h);
   ctx.fillStyle = '#16161a'; ctx.fillRect(x, y, w, h);
   ctx.strokeStyle = '#5f574f'; ctx.lineWidth = 3; ctx.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3);
@@ -1709,10 +1824,12 @@ function drawOverlays(r, c) {
   const derby = r.mode === 'derby';
   const maxW = VIEW_W - 24;
   if (r.state === 'countdown' && snap.ph === 'countdown') {
-    text(r.t.def.name, VIEW_W / 2, VIEW_H / 2 - 150, 28, r.t.def.color, 'center', maxW);
+    const low = shortView();
+    text(r.t.def.name, VIEW_W / 2, low ? 52 : VIEW_H / 2 - 205, low ? 22 : 28, r.t.def.color, 'center', maxW);
     text(derby ? 'DEMOLICIÓN · ¡GANA EL ÚLTIMO EN PIE!' : r.t.def.real ? `${r.t.def.country} · FÓRMULA 1 · ${r.laps} VUELTAS` : `DIFICULTAD ${r.t.def.diff} · ${r.laps} VUELTAS`,
-      VIEW_W / 2, VIEW_H / 2 - 108, 12, '#fff1e8', 'center', maxW);
+      VIEW_W / 2, low ? 80 : VIEW_H / 2 - 165, low ? 10 : 12, '#fff1e8', 'center', maxW);
     drawTrafficLight(lightsOn(), false);
+    if (car && car.model) text(`TU COCHE: ${carById(car.model).name}`, VIEW_W / 2, low ? 166 : VIEW_H / 2 - 56, low ? 8 : 9, '#ffec27', 'center', maxW);
     if (car) {
       if (IS_TOUCH) text('FLECHAS IZQ-DER: GIRAR · A: ACELERAR · B: FRENAR', VIEW_W / 2, VIEW_H / 2 + 50, 10, '#fff1e8', 'center', maxW);
       else {
@@ -2049,13 +2166,57 @@ function renderLobby() {
   for (const p of s.p) {
     const li = document.createElement('li');
     if (p.id === myId) li.className = 'me';
-    li.innerHTML = `<span><span class="dot" style="background:${esc(p.c)}"></span><span class="pname">${esc(p.n)}</span></span>` +
+    li.innerHTML = `<span><span class="dot" style="background:${esc(p.c)}"></span><span class="pname">${esc(p.n)}</span> <span class="pcar">${carById(p.car).short}</span></span>` +
       `<span>${p.h ? '<span class="tag">HOST</span>' : ''}${voting ? (p.v ? ' ✔' : ' …') : ''}</span>`;
     ul.appendChild(li);
   }
 
   $('hostPanel').hidden = !isHost;
+  if (renderLobby.shownCar !== myCar) {                     // mi coche (solo se redibuja si cambia)
+    renderLobby.shownCar = myCar;
+    drawCarPreview($('myCarCanvas'), myCar);
+    $('myCarName').textContent = carById(myCar).name;
+  }
 }
+
+// ---------- Garaje: pantalla de selección de coche ----------
+function buildGarage() {
+  const list = $('carList');
+  list.innerHTML = '';
+  for (const m of CARS) {
+    const b = document.createElement('button');
+    b.className = 'carcard';
+    b.dataset.id = m.id;
+    b.innerHTML = `
+      <canvas width="240" height="130"></canvas>
+      <span class="cname">${m.name}</span>
+      <span class="cdesc">${m.desc}</span>
+      ${CAR_STATS.map((lbl, i) => `<span class="cstat"><span>${lbl}</span><span class="pips">${[1, 2, 3, 4, 5].map(k => `<i class="${k <= m.stats[i] ? 'on' : ''}"></i>`).join('')}</span></span>`).join('')}
+      <span class="csel">ELEGIDO</span>`;
+    drawCarPreview(b.querySelector('canvas'), m.id);
+    b.addEventListener('click', () => chooseCar(m.id));
+    b.addEventListener('dblclick', () => { chooseCar(m.id); closeGarage(); });
+    list.appendChild(b);
+  }
+  renderGarage();
+}
+
+function renderGarage() {
+  for (const b of document.querySelectorAll('.carcard')) b.classList.toggle('sel', b.dataset.id === myCar);
+}
+
+function chooseCar(id) {
+  myCar = carById(id).id;
+  store.set('8bits-racing.car', myCar);
+  if (joined) send({ t: 'car', car: myCar });
+  sound.beep(660, 0.06);
+  renderGarage();
+  const sel = document.querySelector('.carcard.sel');
+  if (sel && sel.scrollIntoView) sel.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+
+function openGarage() { garageOpen = true; if (snap) onSnapshot(snap); }
+function closeGarage() { garageOpen = false; sound.beep(880, 0.08); if (snap) onSnapshot(snap); }
 
 function renderAddresses() {
   const urls = ONLINE || location.hostname !== 'localhost' && location.hostname !== '127.0.0.1'
@@ -2130,6 +2291,7 @@ function onSnapshot(s) {
         race.remotes.set(p.id, o);
       }
       o.fl = !!p.fl;                                              // cayendo por un acantilado
+      if (!isF1()) { o.model = carById(p.car).id; o.weight = carPhysFor(p.car).weight; }
       if (race.t.crossings && race.t.crossings.length) o.lvl = levelAt(race.t, ((Math.round(p.pg) % race.t.N) + race.t.N) % race.t.N);
       o.tb = !!p.tb;                                              // con turbo
       o.vx = (p.x - (o.tx ?? p.x)) / 2;
@@ -2139,9 +2301,13 @@ function onSnapshot(s) {
     for (const id of race.remotes.keys()) if (!seen.has(id)) race.remotes.delete(id);
   }
 
-  // Sin nombre no se entra ni a la sala ni a ningún mapa (tampoco el host)
+  // Sin nombre no se entra ni a la sala ni a ningún mapa (tampoco el host).
+  // Tras poner el nombre sale el garaje (elegir coche); desde la sala se puede volver.
+  const inThisRace = s.p.some(p => p.id === myId && p.ig);
+  if (inThisRace) garageOpen = false;
   if (!joined) showScreen('join');
-  else if (inRace) showScreen('game');
+  else if (inRace && (inThisRace || !garageOpen)) showScreen('game');
+  else if (garageOpen) showScreen('garage');
   else showScreen('lobby');
 
   if (currentScreen === 'lobby') renderLobby();
@@ -2210,8 +2376,10 @@ function connect() {
       joined = false;
       race = null;
       renderAddresses();
-      if (myName) send({ t: 'join', name: myName });      // reconexión
+      if (myName) send({ t: 'join', name: myName, car: myCar });      // reconexión
     } else if (m.t === 'joined') {
+      if (!hadJoined) garageOpen = true;                 // recién entrado: a elegir coche
+      hadJoined = true;
       joined = true;
       myName = m.name;
     } else if (m.t === 'host') {
@@ -2236,8 +2404,11 @@ $('joinForm').addEventListener('submit', e => {
   sound.init();
   goFullscreen();
   myName = $('nameInput').value.trim();
-  send({ t: 'join', name: myName });
+  send({ t: 'join', name: myName, car: myCar });
 });
+$('btnGarage').addEventListener('click', openGarage);
+$('btnGarageDone').addEventListener('click', closeGarage);
+buildGarage();
 $('btnVote').addEventListener('click', () => send({ t: 'voteStart' }));
 if (IS_TOUCH) $('btnStop').textContent = 'FIN';
 // Botón de pantalla completa (no aparece donde no existe, p. ej. Safari en iPhone)
