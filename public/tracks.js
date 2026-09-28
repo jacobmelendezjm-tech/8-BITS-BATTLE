@@ -220,6 +220,117 @@ function locate(track, x, y, hint, win = 20) {
   return { idx: best, dist: Math.sqrt(bd) };
 }
 
+// ============================================================
+//  Modo DEMOLICIÓN (estilo Wreckfest)
+//  Arena ovalada cerrada. Todos empiezan con 100% de vida; gana el
+//  último que quede en pie. El servidor manda sobre la vida, los
+//  botiquines y los escudos; cada navegador informa de los golpes
+//  que da su propio coche (es el que conoce su velocidad exacta).
+// ============================================================
+const DERBY = {
+  START_HP: 100,
+  HIT_SOFT: 5,           // golpe corto, sin carrerilla
+  HIT_HARD: 20,          // golpe desde lejos / con mucha velocidad
+  SOFT_MIN: 1.2,         // velocidad de embestida (px/frame) mínima para hacer daño
+  HARD_MIN: 5.5,         // a partir de aquí el golpe es fuerte (≈ 165 km/h en el marcador)
+  HEAL: 20,              // un botiquín recupera 20%
+  HEAL_EVERY: 30000,     // aparecen botiquines cada 30 s
+  SHIELD_EVERY: 40000,   // aparecen escudos cada 40 s
+  SHIELD_MS: 10000,      // un escudo da 10 s de inmunidad
+  PER_PLAYERS: 2,        // 1 botiquín / escudo por cada 2 jugadores vivos (mínimo 1)
+  TIME: 180000,          // límite de 3 minutos para que la partida siempre acabe
+  PICK_R: 38,            // distancia para recoger un objeto
+};
+
+const ARENAS = [
+  {
+    id: 'arena',
+    mode: 'derby',
+    name: 'ARENA DEL CAOS',
+    diff: 'DEMOLICIÓN',
+    color: '#ff77a8',
+    cx: 1000, cy: 750, rx: 860, ry: 560,
+    // Pilares de neumáticos para cubrirse: [x, y, radio]
+    pillars: [[620, 750, 56], [1380, 750, 56], [1000, 480, 44], [1000, 1020, 44]],
+    theme: { out: '#1a1420', floor: '#8a6a4a', floor2: '#6f5238', wall: '#ff004d' },
+  },
+];
+
+function arenaBounds(a) {
+  return { minX: a.cx - a.rx, minY: a.cy - a.ry, maxX: a.cx + a.rx, maxY: a.cy + a.ry };
+}
+
+// Salida: repartidos por el borde mirando al centro
+function ringPoint(a, ang) {
+  const x = a.cx + Math.cos(ang) * a.rx * 0.78, y = a.cy + Math.sin(ang) * a.ry * 0.78;
+  return { x, y, angle: Math.atan2(a.cy - y, a.cx - x) };
+}
+
+// Hueco más pequeño entre el camino recto salida→centro y un pilar
+function pathClearance(a, s) {
+  const dx = a.cx - s.x, dy = a.cy - s.y, L = Math.hypot(dx, dy), ux = dx / L, uy = dy / L;
+  let worst = Infinity;
+  for (const [px, py, pr] of a.pillars) {
+    const vx = px - s.x, vy = py - s.y, along = vx * ux + vy * uy;
+    if (along < 0 || along > L) continue;
+    worst = Math.min(worst, Math.abs(vx * uy - vy * ux) - pr);
+  }
+  return worst;
+}
+
+// Giro del anillo de salida que deja el camino al centro lo más libre posible
+// (determinista: servidor y navegadores calculan lo mismo)
+function ringOffset(a, n) {
+  a._ringOff = a._ringOff || {};
+  if (a._ringOff[n] != null) return a._ringOff[n];
+  let best = 0, bestScore = -Infinity;
+  for (let k = 0; k < 90; k++) {
+    const off = -Math.PI / 2 + (2 * Math.PI / n) * k / 90;
+    let score = Infinity;
+    for (let i = 0; i < n; i++) score = Math.min(score, pathClearance(a, ringPoint(a, off + 2 * Math.PI * i / n)));
+    if (score > bestScore + 1e-6) { bestScore = score; best = off; }
+  }
+  return (a._ringOff[n] = best);
+}
+
+function arenaSpawn(a, i, n) {
+  n = Math.max(1, n);
+  return ringPoint(a, ringOffset(a, n) + 2 * Math.PI * i / n);
+}
+
+// Mantiene pos ({x, y}) dentro de la arena y fuera de los pilares.
+// Devuelve la normal del choque (apuntando hacia el obstáculo) o null.
+function arenaCollide(a, pos, r) {
+  let hit = null;
+  const ex = (pos.x - a.cx) / (a.rx - r), ey = (pos.y - a.cy) / (a.ry - r);
+  const q = Math.hypot(ex, ey);
+  if (q > 1) {
+    pos.x = a.cx + (pos.x - a.cx) / q;
+    pos.y = a.cy + (pos.y - a.cy) / q;
+    const nx = (pos.x - a.cx) / ((a.rx - r) ** 2), ny = (pos.y - a.cy) / ((a.ry - r) ** 2);
+    const l = Math.hypot(nx, ny);
+    hit = { nx: nx / l, ny: ny / l };
+  }
+  for (const [px, py, pr] of a.pillars) {
+    const dx = pos.x - px, dy = pos.y - py, d = Math.hypot(dx, dy), min = pr + r;
+    if (d < min && d > 0) {
+      pos.x = px + dx / d * min;
+      pos.y = py + dy / d * min;
+      hit = { nx: -dx / d, ny: -dy / d };
+    }
+  }
+  return hit;
+}
+
+// ¿Está (x, y) dentro de la arena, con un margen a muros y pilares?
+function arenaInside(a, x, y, margin) {
+  if (Math.hypot((x - a.cx) / (a.rx - margin), (y - a.cy) / (a.ry - margin)) > 1) return false;
+  return a.pillars.every(([px, py, pr]) => Math.hypot(x - px, y - py) > pr + margin);
+}
+
 if (typeof module !== 'undefined') {
-  module.exports = { TRACKS, PHYS, SAMPLE_DS, RUNOFF, buildTrack, locate, angDiff, turnRate };
+  module.exports = {
+    TRACKS, PHYS, SAMPLE_DS, RUNOFF, buildTrack, locate, angDiff, turnRate,
+    DERBY, ARENAS, arenaBounds, arenaSpawn, arenaCollide, arenaInside,
+  };
 }

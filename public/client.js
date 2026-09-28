@@ -84,6 +84,13 @@ const compactHud = () => VIEW_W < 760;
 
 const built = TRACKS.map(buildTrack);
 const trackById = id => built.find(t => t.def.id === id);
+const arenaById = id => ARENAS.find(a => a.id === id);
+const buildArena = a => ({ def: a, arena: a, bounds: arenaBounds(a) });
+const hpColor = hp => (hp > 60 ? '#00e436' : hp > 30 ? '#ffec27' : '#ff004d');
+function fmtClock(ms) {
+  const sec = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+}
 
 // ---------- Utilidades ----------
 function fmtMs(ms) {
@@ -153,6 +160,10 @@ const sound = {
     o.start(); o.stop(this.ctx.currentTime + dur);
   },
   bump() { this.beep(90, 0.12, 'square', 0.1); },
+  crash(big) {
+    this.beep(big ? 60 : 110, big ? 0.35 : 0.15, 'sawtooth', big ? 0.22 : 0.12);
+    if (big) this.beep(45, 0.45, 'square', 0.12);
+  },
   toggle() {
     this.muted = !this.muted;
     store.set('8bits-racing.mute', this.muted ? '1' : '0');
@@ -405,6 +416,129 @@ function renderMinimap(t, maxW, maxH) {
   return { canvas: cv, scale, ox, oy };
 }
 
+// ---------- Arena de demolición ----------
+function renderArena(t, count) {
+  const a = t.def, th = a.theme;
+  const [mx, my] = margins();
+  const ox = t.bounds.minX - mx, oy = t.bounds.minY - my;
+  const w = Math.max(VIEW_W, Math.ceil(t.bounds.maxX - t.bounds.minX + 2 * mx));
+  const h = Math.max(VIEW_H, Math.ceil(t.bounds.maxY - t.bounds.minY + 2 * my));
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const c = cv.getContext('2d');
+  const r = rng(4242);
+  const cx = a.cx - ox, cy = a.cy - oy;
+  const ell = grow => { c.beginPath(); c.ellipse(cx, cy, a.rx + grow, a.ry + grow, 0, 0, Math.PI * 2); };
+
+  c.fillStyle = th.out;
+  c.fillRect(0, 0, w, h);
+  // Gradas con público
+  ell(240); c.fillStyle = '#2a2233'; c.fill();
+  const crowd = ['#ff004d', '#29adff', '#ffec27', '#00e436', '#ff77a8', '#fff1e8', '#ffa300', '#83769c'];
+  for (let i = 0; i < 3200; i++) {
+    const ang = r() * Math.PI * 2, k = 70 + r() * 165;
+    const x = cx + Math.cos(ang) * (a.rx + k), y = cy + Math.sin(ang) * (a.ry + k);
+    c.fillStyle = crowd[Math.floor(r() * crowd.length)];
+    c.fillRect(Math.round(x / 4) * 4, Math.round(y / 4) * 4, 4, 4);
+  }
+  // Valla de hormigón
+  ell(56); c.fillStyle = '#5f574f'; c.fill();
+  ell(44); c.fillStyle = '#c2c3c7'; c.fill();
+  // Suelo de tierra con grano y rodadas
+  ell(0); c.fillStyle = th.floor; c.fill();
+  c.save();
+  ell(0); c.clip();
+  for (let i = 0; i < a.rx * a.ry / 60; i++) {
+    c.fillStyle = r() < 0.5 ? 'rgba(0,0,0,.12)' : 'rgba(255,255,255,.06)';
+    c.fillRect(Math.round((cx + (r() * 2 - 1) * a.rx) / 4) * 4, Math.round((cy + (r() * 2 - 1) * a.ry) / 4) * 4, 4, 4);
+  }
+  c.lineWidth = 7;
+  for (let k = 0; k < 18; k++) {
+    c.strokeStyle = r() < 0.5 ? 'rgba(0,0,0,.13)' : th.floor2;
+    c.beginPath();
+    c.ellipse(cx + (r() - 0.5) * 400, cy + (r() - 0.5) * 260, 140 + r() * 520, 90 + r() * 320, r() * Math.PI, r() * 6, r() * 6 + 1.2 + r() * 2);
+    c.stroke();
+  }
+  c.strokeStyle = 'rgba(255,241,232,.3)';
+  c.lineWidth = 8;
+  c.beginPath(); c.arc(cx, cy, 130, 0, Math.PI * 2); c.stroke();
+  c.restore();
+  // Muro de neumáticos rojo y blanco
+  c.lineWidth = 18;
+  c.strokeStyle = '#fff1e8'; ell(9); c.stroke();
+  c.setLineDash([20, 20]); c.strokeStyle = th.wall; ell(9); c.stroke(); c.setLineDash([]);
+  // Pilares de neumáticos
+  for (const [px, py, pr] of a.pillars) {
+    const x = px - ox, y = py - oy;
+    c.fillStyle = 'rgba(0,0,0,.4)';
+    c.beginPath(); c.arc(x + 7, y + 7, pr, 0, Math.PI * 2); c.fill();
+    for (let k = 0; k < 4; k++) {
+      c.fillStyle = k % 2 ? '#3a3a42' : '#16161a';
+      c.beginPath(); c.arc(x, y, pr * (1 - k * 0.22), 0, Math.PI * 2); c.fill();
+    }
+    c.fillStyle = th.wall;
+    c.beginPath(); c.arc(x, y, pr * 0.2, 0, Math.PI * 2); c.fill();
+  }
+  // Casillas de salida
+  for (let g = 0; g < count; g++) {
+    const sp = arenaSpawn(a, g, count);
+    c.save();
+    c.translate(sp.x - ox, sp.y - oy);
+    c.rotate(sp.angle);
+    c.strokeStyle = 'rgba(255,241,232,.6)';
+    c.lineWidth = 3;
+    c.strokeRect(-20, -14, 40, 28);
+    c.restore();
+  }
+  return { canvas: cv, ctx: c, ox, oy, w, h };
+}
+
+function renderArenaMinimap(t, maxW, maxH) {
+  const a = t.def;
+  const bw = 2 * a.rx, bh = 2 * a.ry, pad = 10;
+  const scale = Math.min((maxW - 2 * pad) / bw, (maxH - 2 * pad) / bh);
+  const cv = document.createElement('canvas');
+  cv.width = Math.ceil(bw * scale + 2 * pad);
+  cv.height = Math.ceil(bh * scale + 2 * pad);
+  const c = cv.getContext('2d');
+  const ox = t.bounds.minX - pad / scale, oy = t.bounds.minY - pad / scale;
+  c.fillStyle = '#c2c3c7';
+  c.strokeStyle = '#000';
+  c.lineWidth = 3;
+  c.beginPath(); c.ellipse((a.cx - ox) * scale, (a.cy - oy) * scale, a.rx * scale, a.ry * scale, 0, 0, Math.PI * 2);
+  c.fill(); c.stroke();
+  c.fillStyle = '#16161a';
+  for (const [px, py, pr] of a.pillars) {
+    c.beginPath(); c.arc((px - ox) * scale, (py - oy) * scale, Math.max(2, pr * scale), 0, Math.PI * 2); c.fill();
+  }
+  return { canvas: cv, scale, ox, oy };
+}
+
+function drawArenaPreview(cv, a) {
+  const c = cv.getContext('2d');
+  const pad = 16;
+  const scale = Math.min((cv.width - 2 * pad) / (2 * a.rx), (cv.height - 2 * pad) / (2 * a.ry));
+  const X = x => cv.width / 2 + (x - a.cx) * scale, Y = y => cv.height / 2 + (y - a.cy) * scale;
+  c.fillStyle = a.theme.out;
+  c.fillRect(0, 0, cv.width, cv.height);
+  c.beginPath(); c.ellipse(X(a.cx), Y(a.cy), a.rx * scale + 6, a.ry * scale + 6, 0, 0, Math.PI * 2);
+  c.fillStyle = a.theme.wall; c.fill();
+  c.beginPath(); c.ellipse(X(a.cx), Y(a.cy), a.rx * scale, a.ry * scale, 0, 0, Math.PI * 2);
+  c.fillStyle = a.theme.floor; c.fill();
+  c.fillStyle = '#16161a';
+  for (const [px, py, pr] of a.pillars) { c.beginPath(); c.arc(X(px), Y(py), pr * scale, 0, Math.PI * 2); c.fill(); }
+  // Unos coches chocando en el centro
+  const cols = ['#ffec27', '#29adff', '#00e436', '#ff004d'];
+  [[-30, -8, 0.3], [18, 4, 3.4], [-4, 26, -1.2], [30, -26, 2.2]].forEach(([dx, dy, ang], i) => {
+    c.save();
+    c.translate(X(a.cx) + dx, Y(a.cy) + dy);
+    c.rotate(ang);
+    c.fillStyle = cols[i];
+    c.fillRect(-7, -4, 14, 8);
+    c.restore();
+  });
+}
+
 // ---------- Física de mi coche ----------
 function makeCar(t, g, color) {
   const s = gridSlot(t, g), i = s.idx;
@@ -417,6 +551,47 @@ function makeCar(t, g, color) {
     lapsDone: 0, lapStart: 0, lapTimes: [], bestLap: null,
     finished: false, finishFrame: null, wrongWay: 0, bumpCd: 0,
   };
+}
+
+function makeDerbyCar(t, g, n, color) {
+  const sp = arenaSpawn(t.arena, g, n);
+  return {
+    color, dark: darken(color),
+    x: sp.x, y: sp.y, angle: sp.angle, vx: 0, vy: 0, fwd: 0, lat: 0,
+    surface: 0, bumpCd: 0, wrongWay: 0,
+    progress: 0, lapsDone: 0, lapStart: 0, lapTimes: [], bestLap: null, finished: false,
+  };
+}
+
+// Muros y pilares de la arena
+function arenaWalls(car, t) {
+  const pos = { x: car.x, y: car.y };
+  const hit = arenaCollide(t.arena, pos, CAR_R);
+  if (hit) {
+    car.x = pos.x; car.y = pos.y;
+    const vn = car.vx * hit.nx + car.vy * hit.ny;
+    if (vn > 0) {
+      car.vx -= 1.6 * vn * hit.nx;
+      car.vy -= 1.6 * vn * hit.ny;
+      car.vx *= 0.7; car.vy *= 0.7;
+      if (car.bumpCd <= 0 && vn > 1) { sound.bump(); car.bumpCd = 15; shake = Math.min(8, vn * 1.5); }
+    }
+  }
+  if (car.bumpCd > 0) car.bumpCd--;
+  car.surface = 0;
+}
+
+// Mi coche ha embestido a otro: le digo al servidor cuánto daño le hace.
+// El daño depende de mi velocidad hacia él: golpe corto 5%, con carrerilla 20%.
+function reportHit(o, ram) {
+  if (ram < DERBY.SOFT_MIN || o.id == null) return;
+  const now = performance.now();
+  if ((race.hitCd.get(o.id) || 0) > now) return;
+  race.hitCd.set(o.id, now + 450);
+  const dmg = ram >= DERBY.HARD_MIN ? DERBY.HIT_HARD : DERBY.HIT_SOFT;
+  send({ t: 'hit', rid: race.rid, target: o.id, dmg });
+  sound.crash(dmg === DERBY.HIT_HARD);
+  shake = Math.max(shake, dmg === DERBY.HIT_HARD ? 7 : 3);
 }
 
 function stepCar(car, ctl) {
@@ -494,15 +669,32 @@ function autopilot(car, t) {
   };
 }
 
-// Choques con los coches de los demás (solo se mueve el mío)
-function collideRemote(car, others) {
+// Choques con los coches de los demás (solo se mueve el mío). En demolición,
+// además, el otro me empuja con su velocidad y yo informo de mis embestidas.
+function collideRemote(car, others, derby) {
+  const touching = new Set();
   for (const o of others) {
     const dx = car.x - o.x, dy = car.y - o.y;
     const d = Math.hypot(dx, dy);
+    // Contacto: empieza al chocar de verdad y dura mientras sigáis casi pegados
+    // (el margen de 4 px evita que un pequeño rebote cuente como golpe nuevo)
+    if (derby && d > 0 && (d < CAR_R * 2 || (d < CAR_R * 2 + 4 && race.touch.has(o.id)))) touching.add(o.id);
     if (d >= CAR_R * 2 || d === 0) continue;
     const nx = dx / d, ny = dy / d;
+    const ram = -(car.vx * nx + car.vy * ny);        // mi velocidad hacia el otro, antes del choque
     car.x += nx * (CAR_R * 2 - d);
     car.y += ny * (CAR_R * 2 - d);
+    if (derby) {
+      const rel = (car.vx - (o.vx || 0)) * nx + (car.vy - (o.vy || 0)) * ny;
+      if (rel < 0) {
+        car.vx -= 0.65 * rel * nx;
+        car.vy -= 0.65 * rel * ny;
+      }
+      // Solo cuenta como golpe nuevo si antes estabais separados: empujar
+      // pegado a otro coche no le quita vida sin parar
+      if (!race.touch.has(o.id)) reportHit(o, ram);
+      continue;
+    }
     const vn = car.vx * nx + car.vy * ny;
     if (vn < 0) {
       car.vx -= 1.3 * vn * nx;
@@ -510,6 +702,7 @@ function collideRemote(car, others) {
       if (-vn > 1.5) sound.bump();
     }
   }
+  if (derby) race.touch = touching;
 }
 
 // ---------- Estado ----------
@@ -530,21 +723,28 @@ function send(m) {
 
 // Crea la carrera local cuando el servidor empieza una nueva
 function setupRace(s) {
-  const t = trackById(s.tr);
+  const arena = arenaById(s.tr);
+  const t = arena ? buildArena(arena) : trackById(s.tr);
   if (!t) return;
+  const derby = !!arena;
   const me = s.p.find(p => p.id === myId && p.ig);
   const racersCount = s.p.filter(p => p.ig).length;
+  const small = compactHud() || IS_TOUCH;
   race = {
-    rid: s.rid, t,
-    gfx: renderTrack(t, Math.max(racersCount, 2)),
-    mini: compactHud() || IS_TOUCH ? renderMinimap(t, 150, 120) : renderMinimap(t, 190, 150),
-    car: me ? makeCar(t, me.g, me.c) : null,
+    rid: s.rid, t, mode: derby ? 'derby' : 'race',
+    gfx: derby ? renderArena(t, Math.max(racersCount, 2)) : renderTrack(t, Math.max(racersCount, 2)),
+    mini: derby
+      ? renderArenaMinimap(t, small ? 150 : 190, small ? 120 : 150)
+      : renderMinimap(t, small ? 150 : 190, small ? 120 : 150),
+    car: me ? (derby ? makeDerbyCar(t, me.g, racersCount, me.c) : makeCar(t, me.g, me.c)) : null,
     remotes: new Map(),
     state: 'countdown', frame: 0, raceFrame: 0,
     banner: null, cam: { x: 0, y: 0 }, lastBeep: 99,
     newRecord: false, order: [],
+    fx: [], hitCd: new Map(), touch: new Set(), hurt: 0,   // demolición
   };
   if (race.car) { race.cam.x = race.car.x; race.cam.y = race.car.y; }
+  else if (derby) { race.cam.x = arena.cx; race.cam.y = arena.cy; }
   else { race.cam.x = t.xs[0]; race.cam.y = t.ys[0]; }
   shake = 0;
   $('results').hidden = true;
@@ -553,6 +753,11 @@ function setupRace(s) {
 
 function banner(text, color = '#ffec27', frames = 120) {
   race.banner = { text, color, until: race.frame + frames };
+}
+
+// Texto flotante sobre la arena (-20%, +20%, K.O....)
+function fx(x, y, str, color, size = 12) {
+  race.fx.push({ x, y, text: str, color, size, start: race.frame, until: race.frame + 60 });
 }
 
 // Un paso de física (60 por segundo)
@@ -574,7 +779,12 @@ function update() {
     r.raceFrame++;
   }
 
-  if (car && r.state === 'racing') {
+  if (car && r.state === 'racing' && r.mode === 'derby') {
+    stepCar(car, playerControl());
+    collideRemote(car, r.remotes.values(), true);
+    arenaWalls(car, t);
+    addSkid(car);
+  } else if (car && r.state === 'racing') {
     const ctl = car.finished ? autopilot(car, t) : playerControl();
     stepCar(car, ctl);
     collideRemote(car, r.remotes.values());
@@ -582,6 +792,7 @@ function update() {
     checkLap(car);
     addSkid(car);
   }
+  r.fx = r.fx.filter(e => e.until > r.frame);
 
   // Coches remotos: se acercan suavemente a la última posición recibida
   for (const o of r.remotes.values()) {
@@ -596,24 +807,30 @@ function update() {
     if (!p.ig) continue;
     const mine = car && p.id === myId;
     list.push({
-      id: p.id, name: p.n, color: p.c, me: mine,
+      id: p.id, name: p.n, color: p.c, me: p.id === myId,
       progress: mine ? car.progress : p.pg,
       fin: mine ? (car.finished || p.fin) : p.fin,
       pl: p.pl || 0,
       lp: mine ? car.lapsDone : p.lp,
+      hp: p.hp, al: p.al, ko: p.ko, kt: p.kt || 0,
     });
   }
-  list.sort((a, b) => {
-    if (a.fin && b.fin) return (a.pl || 99) - (b.pl || 99);
-    if (a.fin) return -1;
-    if (b.fin) return 1;
-    return b.progress - a.progress;
-  });
+  if (r.mode === 'derby') {
+    // Vivos primero (más vida delante); luego eliminados, el último en caer delante
+    list.sort((a, b) => (b.al - a.al) || (a.al ? b.hp - a.hp : b.kt - a.kt));
+  } else {
+    list.sort((a, b) => {
+      if (a.fin && b.fin) return (a.pl || 99) - (b.pl || 99);
+      if (a.fin) return -1;
+      if (b.fin) return 1;
+      return b.progress - a.progress;
+    });
+  }
   r.order = list;
 
   // Cámara: mi coche o, si miro, el que va primero
   let target = car;
-  if (!car && list.length) target = r.remotes.get(list[0].id);
+  if (!car) target = list.map(o => r.remotes.get(o.id)).find(Boolean);
   if (target) {
     const tx = target.x + (target.vx || 0) * 14, ty = target.y + (target.vy || 0) * 14;
     r.cam.x += (tx - r.cam.x) * 0.12;
@@ -739,8 +956,14 @@ function draw() {
 
   ctx.save();
   ctx.translate(-cx - g.ox, -cy - g.oy);
+  if (r.mode === 'derby') drawPickups(r);
   for (const o of r.remotes.values()) drawCar(ctx, o);
   if (r.car) drawCar(ctx, r.car);                // el mío encima
+  if (r.mode === 'derby') {
+    const byId = new Map(snap.p.map(p => [p.id, p]));
+    for (const [id, o] of r.remotes) drawDerbyExtras(o, byId.get(id));
+    if (r.car) drawDerbyExtras(r.car, byId.get(myId));
+  }
   ctx.font = "8px 'Press Start 2P', monospace";
   ctx.textAlign = 'center';
   for (const o of r.remotes.values()) {
@@ -749,14 +972,80 @@ function draw() {
     ctx.fillStyle = o.color;
     ctx.fillText(o.name, Math.round(o.x), Math.round(o.y) - 21);
   }
+  for (const e of r.fx) {
+    const k = (r.frame - e.start) / 60;
+    ctx.globalAlpha = Math.max(0, 1 - k * k);
+    text(e.text, Math.round(e.x), Math.round(e.y - k * 40), e.size, e.color, 'center');
+    ctx.globalAlpha = 1;
+  }
   ctx.restore();
 
+  // Destello rojo al recibir un golpe
+  if (r.hurt > r.frame) {
+    ctx.fillStyle = `rgba(255,0,77,${Math.min(0.35, (r.hurt - r.frame) / 60)})`;
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  }
+
   drawHud(r);
+}
+
+// Botiquines (cruz roja) y escudos (azules) flotando sobre la arena
+function drawPickups(r) {
+  for (const [id, k, x, y] of snap.pk || []) {
+    const bob = Math.sin(r.frame * 0.08 + id) * 3;
+    ctx.save();
+    ctx.translate(x, y + bob);
+    ctx.fillStyle = 'rgba(0,0,0,.35)';
+    ctx.beginPath(); ctx.ellipse(3, 20 - bob, 16, 5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = k === 'hp' ? 'rgba(255,0,77,.6)' : 'rgba(41,173,255,.7)';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0, 0, 22 + Math.sin(r.frame * 0.15 + id) * 3, 0, Math.PI * 2); ctx.stroke();
+    if (k === 'hp') {
+      ctx.fillStyle = '#000'; ctx.fillRect(-16, -16, 32, 32);
+      ctx.fillStyle = '#fff1e8'; ctx.fillRect(-14, -14, 28, 28);
+      ctx.fillStyle = '#ff004d'; ctx.fillRect(-4, -10, 8, 20); ctx.fillRect(-10, -4, 20, 8);
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(0, -17); ctx.lineTo(15, -11); ctx.lineTo(13, 6); ctx.lineTo(0, 17); ctx.lineTo(-13, 6); ctx.lineTo(-15, -11);
+      ctx.closePath();
+      ctx.fillStyle = '#29adff'; ctx.fill();
+      ctx.strokeStyle = '#fff1e8'; ctx.lineWidth = 3; ctx.stroke();
+      ctx.fillStyle = '#1d2b53'; ctx.fillRect(-3, -10, 6, 20);
+    }
+    ctx.restore();
+  }
+}
+
+// Escudo, humo y barra de vida de cada coche en demolición
+function drawDerbyExtras(o, p) {
+  if (!p) return;
+  const x = Math.round(o.x), y = Math.round(o.y), fr = race.frame;
+  if (p.hp <= 40) {
+    for (let k = 0; k < 3; k++) {
+      const t = (fr * 0.7 + k * 23 + p.id * 37) % 60;
+      const sz = 6 + t / 5;
+      ctx.fillStyle = `rgba(40,36,44,${Math.max(0, 0.55 - t / 110)})`;
+      ctx.fillRect(Math.round(x - sz / 2 + Math.sin((t + k) * 0.3) * 6), Math.round(y - 8 - t * 0.7), sz, sz);
+    }
+    if (p.hp <= 20 && fr % 10 < 5) { ctx.fillStyle = '#ffa300'; ctx.fillRect(x - 4, y - 4, 8, 8); }
+  }
+  if (p.sh > 0 && (p.sh > 2000 || fr % 10 < 6)) {
+    const rad = 27 + Math.sin(fr * 0.2) * 2;
+    ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(41,173,255,.18)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(41,173,255,.95)'; ctx.lineWidth = 3; ctx.stroke();
+  }
+  const bw = 38;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(x - bw / 2 - 1, y + 21, bw + 2, 7);
+  ctx.fillStyle = hpColor(p.hp);
+  ctx.fillRect(x - bw / 2, y + 22, Math.round(bw * p.hp / 100), 5);
 }
 
 // Marcador. En ordenador: minimapa y velocímetro abajo. En móvil van en la
 // columna derecha, porque abajo están las flechas (izquierda) y los botones A/B (derecha).
 function drawHud(r) {
+  if (r.mode === 'derby') return drawDerbyHud(r);
   const car = r.car;
   const c = compactHud();
   const touchSafe = IS_TOUCH ? 170 : 12;           // hueco inferior para los controles táctiles
@@ -838,13 +1127,20 @@ function drawHud(r) {
     text(o.fin ? 'META' : `V${Math.min(LAPS, o.lp + 1)}`, 220, ly + 11 + i * 18, 8, o.fin ? '#00e436' : '#83769c', 'right');
   });
 
-  // Cuenta atrás
+  drawOverlays(r, c);
+}
+
+// Cuenta atrás, instrucciones y mensajes grandes (comunes a los dos modos)
+function drawOverlays(r, c) {
+  const car = r.car;
+  const derby = r.mode === 'derby';
   const maxW = VIEW_W - 24;
   if (r.state === 'countdown' && snap.ph === 'countdown') {
     const n = Math.ceil(snap.left / 1000);
     if (n > 3) {
       text(r.t.def.name, VIEW_W / 2, VIEW_H / 2 - 70, 28, r.t.def.color, 'center', maxW);
-      text(`DIFICULTAD ${r.t.def.diff} · ${LAPS} VUELTAS`, VIEW_W / 2, VIEW_H / 2 - 20, 12, '#fff1e8', 'center', maxW);
+      text(derby ? 'DEMOLICIÓN · ¡GANA EL ÚLTIMO EN PIE!' : `DIFICULTAD ${r.t.def.diff} · ${LAPS} VUELTAS`,
+        VIEW_W / 2, VIEW_H / 2 - 20, 12, '#fff1e8', 'center', maxW);
     } else if (n > 0) {
       text(String(n), VIEW_W / 2, VIEW_H / 2 - 60, 72, n === 1 ? '#ffa300' : '#ff004d', 'center');
     }
@@ -862,30 +1158,136 @@ function drawHud(r) {
   if (r.banner && r.frame < r.banner.until) {
     text(r.banner.text, VIEW_W / 2, c ? Math.round(VIEW_H * 0.3) : 150, 28, r.banner.color, 'center', maxW);
   }
-  if (car && car.wrongWay > 40 && !car.finished && Math.floor(r.frame / 20) % 2 === 0) {
+  if (!derby && car && car.wrongWay > 40 && !car.finished && Math.floor(r.frame / 20) % 2 === 0) {
     text('¡SENTIDO CONTRARIO!', VIEW_W / 2, VIEW_H / 2 + 40, 18, '#ff004d', 'center', maxW);
   }
-  if (snap.ph === 'playing' && snap.left > 0) {
+  if (!derby && snap.ph === 'playing' && snap.left > 0) {
     text(`FIN DE CARRERA EN ${Math.ceil(snap.left / 1000)}s`, VIEW_W / 2, c ? Math.round(VIEW_H * 0.3) - 30 : 110, 10, '#ffa300', 'center', maxW);
   }
+}
+
+// Marcador del modo demolición
+function drawDerbyHud(r) {
+  const c = compactHud();
+  const touchSafe = IS_TOUCH ? 170 : 12;
+  const me = snap.p.find(p => p.id === myId && p.ig);
+  const car = r.car;
+  const m = r.mini, mw = m.canvas.width, mh = m.canvas.height;
+  const fs = c ? 8 : 10;
+  let rightY = 12;
+
+  // Mi vida (y escudo)
+  if (me) {
+    const bw = c ? 200 : 240, hp = me.al ? me.hp : 0;
+    box(12, 12, bw, 78);
+    text('VIDA', 26, 26, 10, '#ffec27');
+    text(`${hp}%`, 26, 42, 22, hpColor(hp));
+    if (!me.al) text('K.O.', 12 + bw - 14, 44, 16, '#ff004d', 'right');
+    else if (me.sh > 0) text(`ESCUDO ${Math.ceil(me.sh / 1000)}s`, 12 + bw - 14, 26, 8, '#29adff', 'right');
+    ctx.fillStyle = '#000'; ctx.fillRect(26, 70, bw - 28, 8);
+    ctx.fillStyle = hpColor(hp); ctx.fillRect(26, 70, Math.round((bw - 28) * hp / 100), 8);
+  } else {
+    box(12, 12, c ? 160 : 300, 44);
+    text('MODO ESPECTADOR', 26, c ? 30 : 28, c ? 8 : 10, '#ffec27');
+  }
+
+  // Tiempo, vivos, mis K.O. y cuándo salen los próximos objetos
+  const playing = snap.ph === 'playing';
+  const inArena = snap.p.filter(p => p.ig), alive = inArena.filter(p => p.al).length;
+  const rows = [
+    ['TIEMPO', fmtClock(playing ? snap.left : DERBY.TIME), '#fff1e8'],
+    ['VIVOS', `${alive}/${inArena.length}`, '#fff1e8'],
+    ...(me ? [['MIS K.O.', String(me.ko || 0), '#00e436']] : []),
+    ['BOTIQUÍN', playing ? `${Math.ceil((snap.nh || 0) / 1000)}s` : `${DERBY.HEAL_EVERY / 1000}s`, '#ff004d'],
+    ['ESCUDO', playing ? `${Math.ceil((snap.ns || 0) / 1000)}s` : `${DERBY.SHIELD_EVERY / 1000}s`, '#29adff'],
+  ];
+  const tw = c ? 196 : 250, tx = VIEW_W - tw - 12, th = 16 + rows.length * 20;
+  box(tx, 12, tw, th);
+  rows.forEach(([label, val, col], i) => {
+    text(label, tx + 14, 24 + i * 20, fs, '#ffec27');
+    text(val, VIEW_W - 26, 24 + i * 20, fs, col, 'right');
+  });
+  rightY = 12 + th + 8;
+
+  // Minimapa con objetos y coches
+  const mx = VIEW_W - mw - 12;
+  const my = IS_TOUCH ? rightY : VIEW_H - mh - 12;
+  ctx.fillStyle = 'rgba(0,0,0,.55)';
+  ctx.fillRect(mx, my, mw, mh);
+  ctx.drawImage(m.canvas, mx, my);
+  for (const [, k, x, y] of snap.pk || []) {
+    ctx.fillStyle = k === 'hp' ? '#ff004d' : '#29adff';
+    ctx.fillRect(Math.round(mx + (x - m.ox) * m.scale) - 3, Math.round(my + (y - m.oy) * m.scale) - 3, 6, 6);
+  }
+  const dots = [...r.remotes.values()];
+  if (car) dots.push(car);
+  for (const o of dots) {
+    const x = mx + (o.x - m.ox) * m.scale, y = my + (o.y - m.oy) * m.scale;
+    const sz = o === car ? 8 : 6;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(Math.round(x - sz / 2) - 1, Math.round(y - sz / 2) - 1, sz + 2, sz + 2);
+    ctx.fillStyle = o.color;
+    ctx.fillRect(Math.round(x - sz / 2), Math.round(y - sz / 2), sz, sz);
+  }
+
+  // Velocímetro (en móvil no cabe con los botones: se omite)
+  if (car && !IS_TOUCH) {
+    const sw = c ? 170 : 200, sx = 12, sy = VIEW_H - 70;
+    box(sx, sy, sw, 58);
+    const kmh = Math.round(Math.abs(car.fwd) * 30);
+    text(String(kmh).padStart(3, '0'), sx + 14, sy + 16, 22, kmh >= DERBY.HARD_MIN * 30 ? '#ff004d' : '#fff1e8');
+    text('KM/H', sx + sw - 70, sy + 24, 10, '#ffec27');
+    const bw = sw - 28;
+    ctx.fillStyle = '#000'; ctx.fillRect(sx + 14, sy + 46, bw, 6);
+    ctx.fillStyle = kmh >= DERBY.HARD_MIN * 30 ? '#ff004d' : '#00e436';
+    ctx.fillRect(sx + 14, sy + 46, Math.round(bw * Math.min(1, Math.abs(car.fwd) / PHYS.maxSpeed)), 6);
+  }
+
+  // Clasificación: vida de cada uno
+  const ly = me ? 98 : 64;
+  const fit = Math.max(3, Math.floor((VIEW_H - touchSafe - ly - 16 - (car && !IS_TOUCH ? 70 : 0)) / 18));
+  const rowsL = r.order.slice(0, Math.min(12, fit));
+  const mine = r.order.find(o => o.me);
+  if (mine && !rowsL.includes(mine)) rowsL[rowsL.length - 1] = mine;
+  box(12, ly, 220, 16 + rowsL.length * 18);
+  rowsL.forEach((o, i) => {
+    const pos = r.order.indexOf(o) + 1;
+    ctx.fillStyle = o.color;
+    ctx.fillRect(24, ly + 12 + i * 18, 8, 8);
+    text(`${pos} ${o.name}`, 40, ly + 11 + i * 18, 8, o.me ? '#ffec27' : o.al ? '#fff1e8' : '#83769c');
+    text(o.al ? `${o.hp}%` : 'K.O.', 220, ly + 11 + i * 18, 8, o.al ? hpColor(o.hp) : '#ff004d', 'right');
+  });
+
+  if (me && !me.al && snap.ph === 'playing') {
+    text('ELIMINADO · MIRANDO LA PARTIDA', VIEW_W / 2, VIEW_H - (IS_TOUCH ? 60 : 110), 10, '#ff004d', 'center', VIEW_W - 24);
+  }
+  drawOverlays(r, c);
 }
 
 // ---------- Resultados ----------
 function showResults(s) {
   const body = $('resultsBody');
   body.innerHTML = '';
+  const derby = s.md === 'derby';
+  $('resultsHead').innerHTML = derby
+    ? '<th>POS</th><th>PILOTO</th><th>VIDA</th><th>K.O.</th>'
+    : '<th>POS</th><th>PILOTO</th><th>TIEMPO</th><th>MEJOR VUELTA</th>';
   for (const p of s.res || []) {
     const tr = document.createElement('tr');
     if (p.id === myId) tr.className = 'me';
-    const time = p.fin ? fmtMs(p.t) : `VUELTA ${Math.min(LAPS, p.lp + 1)}/${LAPS}`;
-    tr.innerHTML = `<td>${p.pos}º</td><td><span class="dot" style="background:${esc(p.c)}"></span>${esc(p.n)}</td>` +
-      `<td>${time}</td><td>${fmtMs(p.best)}</td>`;
+    const name = `<td>${p.pos}º</td><td><span class="dot" style="background:${esc(p.c)}"></span>${esc(p.n)}</td>`;
+    if (derby) {
+      tr.innerHTML = name + `<td>${p.al ? p.hp + '%' : 'ELIMINADO'}</td><td>${p.ko || 0}</td>`;
+    } else {
+      const time = p.fin ? fmtMs(p.t) : `VUELTA ${Math.min(LAPS, p.lp + 1)}/${LAPS}`;
+      tr.innerHTML = name + `<td>${time}</td><td>${fmtMs(p.best)}</td>`;
+    }
     body.appendChild(tr);
   }
   const mine = (s.res || []).find(p => p.id === myId);
   const winner = (s.res || [])[0];
   if (mine) {
-    $('resultsTitle').textContent = mine.pos === 1 ? '¡HAS GANADO!' : `HAS QUEDADO ${mine.pos}º`;
+    $('resultsTitle').textContent = mine.pos === 1 ? (derby ? '¡ÚLTIMO EN PIE!' : '¡HAS GANADO!') : `HAS QUEDADO ${mine.pos}º`;
     $('resultsTitle').style.color = mine.pos === 1 ? '#ffec27' : '#fff1e8';
   } else {
     $('resultsTitle').textContent = winner ? `¡GANA ${winner.n}!` : 'RESULTADOS';
@@ -946,6 +1348,23 @@ function buildCards() {
     list.appendChild(btn);
     cards.set(t.def.id, { btn, votes: btn.querySelector('.votes'), record: btn.querySelector('.record b') });
   });
+  ARENAS.forEach(a => {
+    const btn = document.createElement('button');
+    btn.className = 'track arena';
+    btn.style.setProperty('--c', a.color);
+    btn.innerHTML = `
+      <span class="diff">${a.diff} <span class="stars">NUEVO</span></span>
+      <canvas width="260" height="170"></canvas>
+      <span class="tname">${a.name}</span>
+      <span class="stat">VIDA <b>${DERBY.START_HP}%</b> · GOLPE <b>-${DERBY.HIT_SOFT}%</b> · FUERTE <b>-${DERBY.HIT_HARD}%</b></span>
+      <span class="stat">BOTIQUÍN <b>+${DERBY.HEAL}%</b> CADA <b>${DERBY.HEAL_EVERY / 1000}s</b></span>
+      <span class="stat">ESCUDO <b>${DERBY.SHIELD_MS / 1000}s</b> CADA <b>${DERBY.SHIELD_EVERY / 1000}s</b> · <b>¡ÚLTIMO EN PIE GANA!</b></span>
+      <span class="votes" hidden></span>`;
+    drawArenaPreview(btn.querySelector('canvas'), a);
+    btn.addEventListener('click', () => onCardClick(a.id));
+    list.appendChild(btn);
+    cards.set(a.id, { btn, votes: btn.querySelector('.votes'), record: null });
+  });
 }
 
 function onCardClick(id) {
@@ -966,17 +1385,17 @@ function renderLobby() {
   if (voting) {
     const secs = Math.ceil(s.left / 1000);
     const done = s.p.filter(p => p.v).length;
-    msg = joined ? (myVote ? '¡VOTO REGISTRADO! PUEDES CAMBIARLO' : '¡VOTA LA PISTA!') : 'VOTACIÓN EN CURSO';
+    msg = joined ? (myVote ? '¡VOTO REGISTRADO! PUEDES CAMBIARLO' : '¡VOTA PISTA O ARENA!') : 'VOTACIÓN EN CURSO';
     sub = `QUEDAN ${secs}s · HAN VOTADO ${done}/${n}`;
   } else if (n === 0) {
     msg = 'ESPERANDO PILOTOS...';
     sub = isHost ? 'PUEDES JUGAR TAMBIÉN DESDE EL PANEL DEL HOST' : '';
   } else if (n <= HOST_PICK_MAX) {
-    msg = isHost ? 'ELIGE LA PISTA PARA EMPEZAR' : 'EL HOST ESTÁ ELIGIENDO LA PISTA...';
+    msg = isHost ? 'ELIGE PISTA O ARENA PARA EMPEZAR' : 'EL HOST ESTÁ ELIGIENDO...';
     sub = `${n} PILOTO${n > 1 ? 'S' : ''}: CON ${HOST_PICK_MAX} O MENOS ELIGE EL HOST`;
   } else {
-    msg = isHost ? 'ABRE LA VOTACIÓN PARA ELEGIR PISTA' : 'ESPERANDO A QUE EL HOST ABRA LA VOTACIÓN...';
-    sub = `${n} PILOTOS: LA PISTA SE ELIGE POR VOTACIÓN`;
+    msg = isHost ? 'ABRE LA VOTACIÓN PARA ELEGIR' : 'ESPERANDO A QUE EL HOST ABRA LA VOTACIÓN...';
+    sub = `${n} PILOTOS: SE ELIGE POR VOTACIÓN`;
   }
   $('lobbyMsg').textContent = msg;
   $('lobbySub').textContent = sub;
@@ -991,8 +1410,10 @@ function renderLobby() {
       c.votes.hidden = false;
       c.votes.textContent = `${v} VOTO${v === 1 ? '' : 'S'}`;
     } else c.votes.hidden = true;
-    const best = Number(store.get(bestKey(id)));
-    c.record.textContent = best ? fmtFrames(best) : '--:--.--';
+    if (c.record) {
+      const best = Number(store.get(bestKey(id)));
+      c.record.textContent = best ? fmtFrames(best) : '--:--.--';
+    }
   }
 
   // Lista de pilotos
@@ -1059,17 +1480,25 @@ function onSnapshot(s) {
     if (e.k === 'fin' && race && race.car && e.n !== myName) {
       if (!race.banner || race.frame > race.banner.until) banner(`${e.n} LLEGA ${e.pl}º`, e.c, 120);
     }
+    if (race && race.mode === 'derby') derbyEvent(e);
+  }
+
+  // Demolición: si me han dejado K.O., mi coche desaparece y paso a mirar
+  if (race && race.mode === 'derby' && race.car) {
+    const meP = s.p.find(p => p.id === myId);
+    if (meP && meP.al === false) race.car = null;
   }
 
   // Coches remotos
   if (race) {
     const seen = new Set();
     for (const p of s.p) {
-      if (!p.ig || (race.car && p.id === myId) || p.pg < -1e8) continue;
+      if (!p.ig || (race.car && p.id === myId) || p.pg < -1e8 || p.al === false) continue;
+      if (p.id === myId && race.mode === 'derby') continue;       // mi coche eliminado no se dibuja
       seen.add(p.id);
       let o = race.remotes.get(p.id);
       if (!o) {
-        o = { x: p.x, y: p.y, angle: p.a, color: p.c, dark: darken(p.c), name: p.n, vx: 0, vy: 0 };
+        o = { id: p.id, x: p.x, y: p.y, angle: p.a, color: p.c, dark: darken(p.c), name: p.n, vx: 0, vy: 0 };
         race.remotes.set(p.id, o);
       }
       o.vx = (p.x - (o.tx ?? p.x)) / 2;
@@ -1092,6 +1521,47 @@ function onSnapshot(s) {
   }
   document.body.classList.toggle('results', !$('results').hidden);
   document.body.classList.toggle('spectator', !(race && race.car));
+}
+
+// Eventos del modo demolición: daño, bloqueos, curas, escudos, K.O. y objetos nuevos
+function derbyEvent(e) {
+  const at = id => (id === myId ? race.car : race.remotes.get(id));
+  const o = e.id != null ? at(e.id) : null;
+  const mine = e.id === myId;
+  switch (e.k) {
+    case 'dmg':
+      if (o) fx(o.x, o.y - 32, `-${e.d}%`, '#ff004d', e.d >= DERBY.HIT_HARD ? 18 : 12);
+      if (mine) {
+        race.hurt = race.frame + (e.d >= DERBY.HIT_HARD ? 30 : 16);
+        shake = Math.max(shake, e.d >= DERBY.HIT_HARD ? 10 : 5);
+        sound.crash(e.d >= DERBY.HIT_HARD);
+      }
+      break;
+    case 'block':
+      if (o) fx(o.x, o.y - 32, '¡BLOQUEADO!', '#29adff', 10);
+      if (mine) sound.beep(1200, 0.08);
+      break;
+    case 'heal':
+      if (o) fx(o.x, o.y - 32, `+${e.d}%`, '#00e436', 14);
+      if (mine) { sound.beep(880, 0.1); setTimeout(() => sound.beep(1318, 0.15), 90); }
+      break;
+    case 'shield':
+      if (o) fx(o.x, o.y - 32, '¡ESCUDO!', '#29adff', 12);
+      if (mine) { sound.beep(523, 0.1); setTimeout(() => sound.beep(784, 0.2), 90); }
+      break;
+    case 'ko':
+      if (o) fx(o.x, o.y - 32, 'K.O.', '#ffa300', 20);
+      if (mine) { banner('¡DESTRUIDO!', '#ff004d', 180); sound.crash(true); }
+      else if (e.by === myId) banner(`¡K.O. A ${e.n}!`, '#00e436', 120);
+      else banner(`${e.bn} DEJA K.O. A ${e.n}`, e.c, 100);
+      break;
+    case 'spawn':
+      if (!race.banner || race.frame > race.banner.until) {
+        banner(e.kind === 'hp' ? '¡BOTIQUINES EN LA ARENA!' : '¡ESCUDOS EN LA ARENA!', e.kind === 'hp' ? '#ff004d' : '#29adff', 90);
+      }
+      sound.beep(e.kind === 'hp' ? 660 : 990, 0.12);
+      break;
+  }
 }
 
 // ---------- Red ----------

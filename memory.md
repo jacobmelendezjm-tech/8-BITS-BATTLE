@@ -67,6 +67,22 @@ Si se cambia el dominio de Vercel o la URL de Render, hay que actualizar esas do
 - **Pantalla completa (pedida por el usuario):** botón en la carrera + tecla F; en ordenador a pantalla completa la vista se adapta a la forma de la pantalla (lado corto 640 px lógicos). Probado en Chrome headless (escritorio y móvil emulado); no en iPhone, donde el botón se oculta porque Safari no tiene la API.
 - **Pruebas en navegador:** con Chrome headless + puppeteer-core (instalado en el scratchpad, no en el repo) emulando un Android en horizontal y vertical: controles táctiles con dos dedos, capturas de sala/carrera/espectador y escritorio. No se ha probado en un móvil físico ni en iPhone (Safari).
 
+## Modo demolición (añadido 2026-09-28, pedido por el usuario)
+
+Petición literal: "modo estilo wreckfest", vida 100%, "cada golpe cercano quite 5%, los golpes más lejanos o con más aceleración quiten 20%", 1 punto de vida por cada 2 jugadores cada 30 s que recupere 20%, 1 escudo de inmunidad por cada 2 jugadores cada 40 s con 10 s de duración.
+
+Decisiones tomadas por Claude (no las pidió el usuario; revisar si pide cambios):
+- "Golpe cercano / lejano" se interpretó como la velocidad de embestida: corto sin carrerilla = 5%, con carrerilla ≥ 5,5 px/frame (≈165 km/h) = 20%. Umbrales en `DERBY` de `tracks.js`.
+- El daño lo recibe el golpeado; en un choque de frente, los dos.
+- Empujar pegado no quita vida; los rebotes que vuelven a chocar sí (5% cada uno).
+- Objetos: "por cada 2 jugadores" = jugadores **vivos**, mínimo 1; cada oleada rellena hasta ese número (no se acumulan). Botiquín no se gasta con 100%.
+- Límite de 3 minutos (gana quien tenga más vida) para que la partida siempre acabe.
+- Se elige como una pista más (4ª tarjeta), con la misma regla host/votación.
+
+**Fallo antiguo corregido al probar este modo:** en `server.js`, al terminar una partida, la comprobación de "fin de la pantalla de resultados" usaba el tiempo de la partida ya terminada, así que si la carrera duraba más de 12 s se volvía a la sala al instante y **nunca se veían los resultados** (también en el modo carrera, desde el principio).
+
+Pruebas: servidor con 4 clientes simulados (todas las reglas) y dos navegadores Chrome reales (uno de ordenador y uno de móvil emulado) chocando de frente. Con puppeteer hay que usar **un navegador por jugador**: una segunda pestaña en el mismo navegador queda en segundo plano, no dibuja y los clics/toques se cuelgan.
+
 ## Cuentas usadas
 
 - GitHub: `jacobmelendezjm-tech`

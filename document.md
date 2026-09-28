@@ -2,7 +2,7 @@
 
 ## 1. Visión general
 
-Juego de carreras multijugador para el aula. Un servidor Node.js (`server.js`) sirve la página y coordina la partida por WebSockets. Cada navegador **simula su propio coche** a 60 pasos por segundo y envía su posición al servidor 30 veces por segundo; el servidor reenvía el estado de todos a todos.
+Juego de carreras multijugador para el aula, con un segundo modo de **demolición** (sección 4c). Un servidor Node.js (`server.js`) sirve la página y coordina la partida por WebSockets. Cada navegador **simula su propio coche** a 60 pasos por segundo y envía su posición al servidor 30 veces por segundo; el servidor reenvía el estado de todos a todos.
 
 Así la conducción es inmediata aunque haya latencia (importante en el modo online Vercel + Render). A cambio, el servidor confía en lo que dice cada cliente, algo aceptable en un aula.
 
@@ -55,6 +55,16 @@ La dificultad sube con el número de curvas, lo cerradas que son y el ancho de l
 - Los controles se ocultan en modo espectador y con la tabla de resultados.
 - **Pantalla completa:** se pone sobre todo el documento (`document.documentElement`), para que sigan visibles los resultados y los botones. En móvil se pide sola al entrar; además hay un botón en la carrera y la tecla F. La clase `fill` del `<body>` (móvil, u ordenador a pantalla completa) activa la vista a toda pantalla y el tamaño lógico adaptable; `is-fs` cambia el icono y el texto del botón. Se escucha `fullscreenchange` para reaccionar también cuando se sale con Esc o con el gesto de atrás. En Safari de iPhone no hay API de pantalla completa y el botón se oculta.
 - El margen del mapa pre-renderizado depende del tamaño de la vista, para que la cámara pueda centrar el coche también en vertical. En la pista extrema el lienzo llega a ~4100×2700 px, por debajo del límite de 16,7 M píxeles de Safari en iOS.
+
+## 4c. Modo demolición (estilo Wreckfest)
+
+- La arena (`ARENAS` en `tracks.js`) es una elipse con pilares circulares. `arenaCollide` mantiene los coches dentro y fuera de los pilares; `arenaSpawn` reparte la salida por el borde mirando al centro, con el giro del anillo que deja más libre el camino recto al centro (`ringOffset`).
+- **Quién manda:** el servidor lleva la vida, los K.O., los botiquines y los escudos. Cada navegador sigue simulando solo su coche.
+- **Golpes:** cuando mi coche choca con otro, mi navegador mide mi velocidad hacia él (la conoce exacta) y manda `hit` con 5 (`< HARD_MIN`) o 20 (`≥ HARD_MIN`). Por debajo de `SOFT_MIN` no hay daño. Un golpe nuevo solo cuenta al empezar el contacto (hay que separarse antes), con 450 ms de pausa por rival. En un choque de frente cada uno informa de su golpe, así que los dos pierden vida. El servidor valida: partida de demolición en juego, los dos vivos, daño 5 o 20, coches a menos de 90 px y la misma pausa de 450 ms. Si el golpeado tiene escudo, se bloquea.
+- **Empujones:** en demolición, al chocar también me empuja la velocidad (estimada) del otro coche, así que a quien embisten sale despedido.
+- **Objetos:** el servidor rellena botiquines cada 30 s y escudos cada 40 s hasta tener 1 por cada 2 vivos (mínimo 1), en sitios libres de la arena. Se recogen en el servidor con la última posición de cada coche (radio `PICK_R`).
+- **Fin:** queda 1 vivo (o ninguno), o se acaban los 3 minutos. Clasificación: vivos por vida; después, eliminados del último en caer al primero.
+- **Mensajes nuevos:** cliente→servidor `hit` (`rid, target, dmg`). En la instantánea: `md` (modo), por jugador `hp, al, ko, kt, sh`, y `pk` (objetos), `nh`/`ns` (ms hasta los próximos). Eventos: `dmg`, `block`, `heal`, `shield`, `ko`, `spawn`.
 
 ## 5. Protocolo de mensajes
 
