@@ -54,7 +54,9 @@ Si se cambia el dominio de Vercel o la URL de Render, hay que actualizar esas do
 ## Detección de "host"
 
 - En LAN, quien se conecta desde `127.0.0.1`/`::1` (el equipo del profesor) es siempre host. Ojo al probar con varias pestañas en el mismo equipo: todas son host.
-- Online nadie viene de localhost, así que **el primer jugador que se conecta sin host asignado pasa a serlo** (`hostAssigned`). Si el host se desconecta, el servidor asciende al siguiente conectado y le manda `{t:'host'}`.
+- Online nadie viene de localhost, así que **el primero que se une con su nombre** pasa a ser host si no hay ninguno (`hasHost()`/`makeHost()`). Si el host se desconecta y no queda ninguno, pasa al primer jugador **con nombre** y se le manda `{t:'host'}`.
+- **Regla del usuario (2026-09-28): nadie entra a la sala ni a ningún mapa sin haberse unido con su nombre, tampoco el host.** El cliente muestra siempre la pantalla de nombre si no se ha unido (al host le enseña ahí la dirección para los alumnos) y el servidor exige `p.joined` para `pick`, `voteStart`, `vote` y `stop`. Antes el host podía entrar sin nombre y mirar las partidas; se quitó el formulario "UNIRME" del panel del host.
+- Para probar "jugadores de fuera" en el mismo equipo, conectarse por la IP de red (p. ej. `ws://192.168.x.x:PUERTO`), no por localhost.
 
 ## Decisiones de diseño del juego de carreras
 

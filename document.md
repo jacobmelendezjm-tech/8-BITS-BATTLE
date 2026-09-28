@@ -81,9 +81,9 @@ La dificultad sube con el número de curvas, lo cerradas que son y el ancho de l
 | `stop` | — | host: vuelve a la sala |
 
 ### Servidor → cliente
-- `welcome`: id, si es host, IPs, vueltas, límite de pilotos para que elija el host.
+- `welcome`: id, si es host, IPs, vueltas, límite de pilotos para que elija el host. (Ser host no sirve de nada hasta unirse con nombre: el servidor exige `joined` para elegir, votar o terminar, y el cliente no enseña la sala ni los mapas sin nombre.)
 - `joined`: nombre definitivo (sin repetir).
-- `host`: pasas a ser host (el anterior se desconectó).
+- `host`: pasas a ser host (online: eres el primero en unirte con nombre, o el anterior host se desconectó).
 - `s` (30/s): fase, tiempo restante, id de carrera `rid`, pista, recuento de votos, pilotos (posición, vuelta, progreso, llegada), resultados y eventos (`voted`, `fin`).
 
 ## 6. Cómo modificar el juego

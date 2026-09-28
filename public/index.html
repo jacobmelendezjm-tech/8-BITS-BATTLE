@@ -13,15 +13,19 @@
 </head>
 <body>
 
-  <!-- Pantalla de entrada (alumnos) -->
+  <!-- Pantalla de entrada: todos (host incluido) ponen su nombre antes de nada -->
   <section id="join" class="screen" hidden>
     <h1 class="title">8 BITS<br><span>RACING</span></h1>
-    <p class="blink">¡4 VUELTAS PARA GANAR!</p>
+    <p class="blink">¡CARRERAS Y DEMOLICIÓN!</p>
     <form id="joinForm" class="box">
       <label for="nameInput">TU NOMBRE</label>
       <input id="nameInput" maxlength="12" autocomplete="off" spellcheck="false" placeholder="PILOTO" required>
       <button type="submit">¡A CORRER!</button>
     </form>
+    <div id="joinAddr" class="box addr" hidden>
+      <div class="lbl">ERES EL HOST · LOS DEMÁS SE CONECTAN EN</div>
+      <div class="addrList"></div>
+    </div>
     <div class="help desk-only">
       <p><b>W</b> o <b class="arr">↑</b> ACELERAR · <b>S</b> o <b class="arr">↓</b> FRENAR / MARCHA ATRÁS</p>
       <p><b>A</b> o <b class="arr">←</b> GIRAR IZQUIERDA · <b>D</b> o <b class="arr">→</b> GIRAR DERECHA</p>
@@ -54,16 +58,12 @@
       <aside class="side">
         <div class="box addr">
           <div class="lbl">CONÉCTATE EN</div>
-          <div id="addrList"></div>
+          <div class="addrList"></div>
         </div>
 
         <div id="hostPanel" class="box" hidden>
           <div class="lbl">PANEL DEL HOST</div>
           <p class="tiny left">1-2 JUGADORES: ELIGES TÚ LA PISTA.<br>3 O MÁS: SE VOTA.</p>
-          <form id="hostJoinForm">
-            <input id="hostName" maxlength="12" placeholder="JUGAR TAMBIÉN" autocomplete="off">
-            <button type="submit" class="secondary">UNIRME</button>
-          </form>
         </div>
 
         <div class="box">

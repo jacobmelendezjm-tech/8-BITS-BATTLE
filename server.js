@@ -89,10 +89,16 @@ let finishCount = 0;
 let results = null;
 let nextId = 1;
 let colorIdx = 0;
-let hostAssigned = false;    // true mientras haya un host conectado
 
 function setPhase(p) { phase = p; phaseStart = Date.now(); }
 const joinedPlayers = () => [...players.values()].filter(p => p.joined);
+const hasHost = () => [...players.values()].some(p => p.isHost);
+
+// Da el puesto de host a p (online: al primero que se une con su nombre)
+function makeHost(p) {
+  p.isHost = true;
+  if (p.ws.readyState === 1) p.ws.send(JSON.stringify({ t: 'host' }));
+}
 const racers = () => [...players.values()].filter(p => p.inGame);
 
 function startCountdown(trackId) {
@@ -333,10 +339,9 @@ wss.on('connection', (ws, req) => {
   const addr = req.socket.remoteAddress || '';
   const isLocalhost = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(addr);
   // En LAN, el equipo del profesor (localhost) siempre es host. En un
-  // despliegue online no hay "localhost", así que el primer jugador que
-  // se conecta mientras no haya host asignado pasa a serlo.
-  const isHost = isLocalhost || !hostAssigned;
-  if (isHost) hostAssigned = true;
+  // despliegue online no hay "localhost": el host será el primero que se
+  // una con su nombre (ver 'join'). Nadie puede hacer nada sin nombre.
+  const isHost = isLocalhost;
   const p = {
     id: nextId++, ws, name: '', joined: false, isHost,
     color: COLORS[colorIdx++ % COLORS.length],
@@ -362,13 +367,14 @@ wss.on('connection', (ws, req) => {
         p.name = cleanName(m.name);
         p.joined = true;
         ws.send(JSON.stringify({ t: 'joined', name: p.name }));
+        if (!hasHost()) makeHost(p);
         console.log(`  + ${p.name} se ha unido (${addr.replace('::ffff:', '')})`);
         break;
       case 'pick':         // el host elige la pista (1-2 jugadores)
-        if (p.isHost && phase === 'lobby' && joinedPlayers().length <= HOST_PICK_MAX) startCountdown(m.track);
+        if (p.isHost && p.joined && phase === 'lobby' && joinedPlayers().length <= HOST_PICK_MAX) startCountdown(m.track);
         break;
       case 'voteStart':    // el host abre la votación (3 o más jugadores)
-        if (p.isHost && phase === 'lobby' && joinedPlayers().length > HOST_PICK_MAX) startVoting();
+        if (p.isHost && p.joined && phase === 'lobby' && joinedPlayers().length > HOST_PICK_MAX) startVoting();
         break;
       case 'vote':
         if (phase === 'voting' && p.joined && TRACK_IDS.includes(m.track)) p.vote = m.track;
@@ -398,23 +404,18 @@ wss.on('connection', (ws, req) => {
         derbyHit(p, m);
         break;
       case 'stop':
-        if (p.isHost && phase !== 'lobby') backToLobby();
+        if (p.isHost && p.joined && phase !== 'lobby') backToLobby();
         break;
     }
   });
 
   ws.on('close', () => {
     if (p.joined) console.log(`  - ${p.name} se ha desconectado`);
-    if (p.isHost) hostAssigned = false;
     players.delete(p.id);
-    // Si se va el host en un despliegue online, el siguiente conectado lo sustituye
-    if (!hostAssigned) {
-      const next = [...players.values()][0];
-      if (next) {
-        next.isHost = true;
-        hostAssigned = true;
-        if (next.ws.readyState === 1) next.ws.send(JSON.stringify({ t: 'host' }));
-      }
+    // Si se queda sin host (online), lo sustituye el primero que ya tenga nombre
+    if (!hasHost()) {
+      const next = joinedPlayers()[0];
+      if (next) makeHost(next);
     }
   });
 });

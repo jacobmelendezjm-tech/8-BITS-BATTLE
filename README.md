@@ -4,8 +4,10 @@ Juego de carreras de 8 bits para el aula. Cada alumno conduce su coche desde el 
 
 ## Arrancar (equipo del profesor)
 1. Doble clic en `INICIAR.bat` (o ejecuta `npm install` y después `npm start`).
-2. Se abre `http://localhost:3000`: es el **panel del host**. Tu IP sale a la derecha.
+2. Se abre `http://localhost:3000`. Escribe tu nombre para entrar como **host**; en esa misma pantalla aparece la dirección para los alumnos.
 3. Los alumnos abren en su navegador `http://TU_IP:3000`, escriben su nombre y pulsan **¡A CORRER!**
+
+**Nadie entra a la sala ni a ningún mapa sin haberse unido con su nombre**, tampoco el host. Quien abre la página a mitad de una partida ve primero la pantalla de nombre.
 4. Se elige la pista y empieza la carrera (ver abajo).
 
 La primera vez, Windows pedirá permiso en el firewall para Node.js: marca **Redes privadas** y acepta.

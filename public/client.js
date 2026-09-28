@@ -1396,7 +1396,7 @@ function renderLobby() {
     sub = `QUEDAN ${secs}s · HAN VOTADO ${done}/${n}`;
   } else if (n === 0) {
     msg = 'ESPERANDO PILOTOS...';
-    sub = isHost ? 'PUEDES JUGAR TAMBIÉN DESDE EL PANEL DEL HOST' : '';
+    sub = '';
   } else if (n <= HOST_PICK_MAX) {
     msg = isHost ? 'ELIGE PISTA O ARENA PARA EMPEZAR' : 'EL HOST ESTÁ ELIGIENDO...';
     sub = `${n} PILOTO${n > 1 ? 'S' : ''}: CON ${HOST_PICK_MAX} O MENOS ELIGE EL HOST`;
@@ -1436,21 +1436,23 @@ function renderLobby() {
   }
 
   $('hostPanel').hidden = !isHost;
-  $('hostJoinForm').hidden = joined;
 }
 
 function renderAddresses() {
-  const list = $('addrList');
-  list.innerHTML = '';
   const urls = ONLINE || location.hostname !== 'localhost' && location.hostname !== '127.0.0.1'
     ? [location.origin]
     : ips.map(ip => `http://${ip}:${port}`);
   if (!urls.length) urls.push(location.origin);
-  for (const u of urls) {
-    const d = document.createElement('div');
-    d.textContent = u;
-    list.appendChild(d);
+  for (const list of document.querySelectorAll('.addrList')) {
+    list.innerHTML = '';
+    for (const u of urls) {
+      const d = document.createElement('div');
+      d.textContent = u;
+      list.appendChild(d);
+    }
   }
+  // En la pantalla de entrada, solo el host ve la dirección (para pasarla a los demás)
+  $('joinAddr').hidden = !isHost;
 }
 
 // ---------- Pantallas ----------
@@ -1515,7 +1517,8 @@ function onSnapshot(s) {
     for (const id of race.remotes.keys()) if (!seen.has(id)) race.remotes.delete(id);
   }
 
-  if (!joined && !isHost) showScreen('join');
+  // Sin nombre no se entra ni a la sala ni a ningún mapa (tampoco el host)
+  if (!joined) showScreen('join');
   else if (inRace) showScreen('game');
   else showScreen('lobby');
 
@@ -1591,6 +1594,7 @@ function connect() {
       myName = m.name;
     } else if (m.t === 'host') {
       isHost = true;
+      renderAddresses();
     }
   };
   ws.onclose = () => {
@@ -1610,13 +1614,6 @@ $('joinForm').addEventListener('submit', e => {
   sound.init();
   goFullscreen();
   myName = $('nameInput').value.trim();
-  send({ t: 'join', name: myName });
-});
-$('hostJoinForm').addEventListener('submit', e => {
-  e.preventDefault();
-  sound.init();
-  goFullscreen();
-  myName = $('hostName').value.trim() || 'HOST';
   send({ t: 'join', name: myName });
 });
 $('btnVote').addEventListener('click', () => send({ t: 'voteStart' }));
