@@ -25,7 +25,7 @@ Salirse del asfalto (hierba/tierra) frena mucho, y el muro de neumáticos te dev
 
 ## Controles
 - **Ordenador:** **W** o **↑** acelerar · **S** o **↓** frenar / marcha atrás · **A** o **←** girar a la izquierda · **D** o **→** girar a la derecha · **M** sonido · **F** pantalla completa
-- **Móvil / tablet:** la carrera ocupa toda la pantalla (mejor en horizontal, también funciona en vertical). **Stick** abajo a la izquierda para girar (cuanto más lo empujas, más gira) · botón **A** acelerar · botón **B** frenar / marcha atrás. Se puede girar y acelerar a la vez con dos dedos.
+- **Móvil / tablet:** la carrera ocupa toda la pantalla (mejor en horizontal, también funciona en vertical). **Cruceta de flechas** estilo PlayStation abajo a la izquierda: **←/→** girar, **↑** acelerar, **↓** frenar (se puede deslizar el pulgar y las diagonales cuentan, p. ej. ↑+← acelera y gira) · botón **A** acelerar · botón **B** frenar / marcha atrás. Se puede girar con la cruceta y acelerar con A a la vez, con dos dedos.
 
 ## Pantalla completa
 - Durante la carrera hay un botón de pantalla completa (arriba en el centro en el móvil, abajo a la derecha en el ordenador). Sirve para entrar y para salir.

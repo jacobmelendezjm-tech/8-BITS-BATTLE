@@ -28,7 +28,7 @@
       <p>M: SONIDO ON/OFF · F: PANTALLA COMPLETA</p>
     </div>
     <div class="help touch-only">
-      <p><b>STICK</b> (IZQUIERDA): GIRAR</p>
+      <p><b>FLECHAS</b> (IZQUIERDA): <b class="arr">←</b> <b class="arr">→</b> GIRAR · <b class="arr">↑</b> ACELERAR · <b class="arr">↓</b> FRENAR</p>
       <p><b>A</b>: ACELERAR · <b>B</b>: FRENAR / MARCHA ATRÁS</p>
       <p>MEJOR CON EL MÓVIL EN HORIZONTAL</p>
     </div>
@@ -47,7 +47,7 @@
         <div id="trackList" class="tracks"></div>
         <div class="help">
           <p class="desk-only"><b>W</b>/<b class="arr">↑</b> ACELERAR · <b>S</b>/<b class="arr">↓</b> FRENAR / MARCHA ATRÁS · <b>A</b>/<b>D</b> o <b class="arr">←</b>/<b class="arr">→</b> GIRAR · M: SONIDO · F: PANTALLA COMPLETA</p>
-          <p class="touch-only"><b>STICK</b>: GIRAR · <b>A</b>: ACELERAR · <b>B</b>: FRENAR / MARCHA ATRÁS</p>
+          <p class="touch-only"><b>FLECHAS</b>: <b class="arr">←</b>/<b class="arr">→</b> GIRAR · <b>A</b> o <b class="arr">↑</b>: ACELERAR · <b>B</b> o <b class="arr">↓</b>: FRENAR / MARCHA ATRÁS</p>
         </div>
       </div>
 
@@ -95,9 +95,12 @@
       </div>
     </div>
     <!-- Controles táctiles: solo se ven en móviles/tablets -->
-    <div id="stick" class="stick touch-only" aria-label="Stick de dirección">
-      <span class="arrow left">◄</span><span class="arrow right">►</span>
-      <div id="knob" class="knob"></div>
+    <div id="dpad" class="dpad touch-only" aria-label="Cruceta de dirección">
+      <span class="arm up"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M5 1.5 9 8H1z" transform="rotate(0 5 5)"/></svg></span>
+      <span class="arm left"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M5 1.5 9 8H1z" transform="rotate(-90 5 5)"/></svg></span>
+      <span class="hub"></span>
+      <span class="arm right"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M5 1.5 9 8H1z" transform="rotate(90 5 5)"/></svg></span>
+      <span class="arm down"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M5 1.5 9 8H1z" transform="rotate(180 5 5)"/></svg></span>
     </div>
     <div class="pads touch-only">
       <button type="button" id="btnBrake" class="pad pad-b" aria-label="Frenar">B</button>

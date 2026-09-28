@@ -332,63 +332,48 @@ body.touch .btn-fs svg { width: 16px; height: 16px; }
 @media (orientation: portrait) {
   body.touch .gamebar { flex-direction: column; gap: 6px; }
 }
-body.touch.results .stick,
+body.touch.results .dpad,
 body.touch.results .pads,
-body.touch.spectator .stick,
+body.touch.spectator .dpad,
 body.touch.spectator .pads { display: none !important; }
 
-/* Stick de dirección (izquierda) */
-.stick {
+/* Cruceta de flechas estilo PlayStation (izquierda) */
+.dpad {
+  --arm: 56px;
   position: fixed;
   z-index: 10;
-  left: calc(env(safe-area-inset-left, 0px) + 18px);
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
-  width: 150px;
-  height: 150px;
-  border-radius: 50%;
-  background: rgba(29,43,83,.45);
-  border: 4px solid rgba(41,173,255,.85);
-  box-shadow: 4px 4px 0 rgba(0,0,0,.6);
+  left: calc(env(safe-area-inset-left, 0px) + 16px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  display: grid;
+  grid-template-columns: repeat(3, var(--arm));
+  grid-template-rows: repeat(3, var(--arm));
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
+  filter: drop-shadow(4px 4px 0 rgba(0,0,0,.65));
 }
-.stick::before {                 /* guía horizontal: el stick solo gira */
-  content: '';
-  position: absolute;
-  left: 18%;
-  right: 18%;
-  top: 50%;
-  height: 12px;
-  margin-top: -6px;
-  background: rgba(0,0,0,.5);
+.dpad .arm, .dpad .hub {
+  background: #c2c3c7;
+  pointer-events: none;           /* el dedo lo sigue la cruceta entera */
 }
-.stick .arrow {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  color: rgba(255,241,232,.75);
-  font-size: 12px;
-  pointer-events: none;
+.dpad .arm {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset -4px -4px 0 #83769c, inset 3px 3px 0 #fff1e8;
 }
-.stick .left { left: 9px; }
-.stick .right { right: 9px; }
-.knob {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 62px;
-  height: 62px;
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
+.dpad .up    { grid-area: 1 / 2; border-radius: 10px 10px 0 0; }
+.dpad .left  { grid-area: 2 / 1; border-radius: 10px 0 0 10px; }
+.dpad .hub   { grid-area: 2 / 2; }
+.dpad .right { grid-area: 2 / 3; border-radius: 0 10px 10px 0; }
+.dpad .down  { grid-area: 3 / 2; border-radius: 0 0 10px 10px; }
+.dpad svg { width: 44%; height: 44%; fill: #5f574f; }
+.dpad .arm.on {
   background: var(--accent);
-  box-shadow: inset -5px -5px 0 #ab5236, 3px 3px 0 #000;
-  transition: transform .08s;
-  pointer-events: none;
+  box-shadow: inset 4px 4px 0 #ab5236;
 }
-.stick.on { border-color: var(--accent); }
-.stick.on .knob { transition: none; }
+.dpad .arm.on svg { fill: #000; }
 
 /* Botones A (acelerar) y B (frenar) (derecha) */
 .pads {
@@ -426,8 +411,7 @@ body.touch.spectator .pads { display: none !important; }
 
 /* Móviles en horizontal con poca altura */
 @media (max-height: 380px) {
-  .stick { width: 128px; height: 128px; bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); }
-  .knob { width: 54px; height: 54px; }
+  .dpad { --arm: 46px; bottom: calc(env(safe-area-inset-bottom, 0px) + 10px); }
   .pads { bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); gap: 10px; }
   .pad { width: 66px; height: 66px; font-size: 20px; }
   .pad-a { margin-bottom: 18px; }
