@@ -1,53 +1,76 @@
-# Memoria del proyecto — 8 BITS BATTLE
+# Memoria del proyecto — 8 BITS RACING
 
 Notas de contexto que no están en el código ni en `document.md`/`README.md`, para no tener que redescubrirlas.
 
+> El repo se sigue llamando `8-BITS-BATTLE` y el proyecto de Vercel `8bits-battle` por historia: el 2026-09-28 el juego pasó de battle royale (8 BITS BATTLE) a carreras (8 BITS RACING). No se renombraron para no romper URLs.
+
 ## Despliegues activos
 
-| Servicio | URL | Qué sirve |
-|---|---|---|
-| GitHub | https://github.com/jacobmelendezjm-tech/8-BITS-BATTLE | Repo (rama `master`) |
-| Vercel | https://8bits-battle.vercel.app | Página estática (`public/`) |
-| Render | https://eightbits-battle.onrender.com | Servidor WebSocket (`server.js`), plan Free |
+| Servicio | URL | Qué sirve | ¿Se actualiza solo? |
+|---|---|---|---|
+| GitHub | https://github.com/jacobmelendezjm-tech/8-BITS-BATTLE | Repo (rama `master`) | — |
+| Render | https://eightbits-battle.onrender.com | Servidor WebSocket (`server.js`), plan Free | **Sí**, con cada push a `master` (Blueprint, `render.yaml`) |
+| Vercel | https://8bits-battle.vercel.app | Página estática (`public/`) | **No** (ver abajo): hay que desplegar con la CLI |
 
-- Vercel se despliega con la CLI (`vercel --prod --yes`) desde este equipo — **no** tiene conectado el auto-deploy por GitHub (falló al enlazarlo, ver más abajo), así que un `git push` **no** actualiza Vercel solo. Hay que correr `vercel --prod --yes` manualmente tras cada cambio en `public/`.
-- Render **sí** tiene auto-deploy: cada `git push` a `master` redespliega `server.js` automáticamente (vía Blueprint, `render.yaml`).
-- Render free tier se "duerme" tras ~15 min sin tráfico; la siguiente conexión tarda 30-50s en despertarlo. Si se va a jugar en clase, conviene abrir la página unos minutos antes.
+- Render free tier se "duerme" tras ~15 min sin tráfico; la siguiente conexión tarda 30-50 s en despertarlo. Si se va a jugar en clase, conviene abrir la página unos minutos antes.
+- `server.js` hace `require('./public/tracks.js')`, así que Render necesita ese archivo en el repo.
+
+## Flujo de publicación (pedido por el usuario)
+
+El usuario quiere que cada cambio se publique solo, sin tener que pedirlo (regla también en `CLAUDE.md`):
+
+1. Comprobar el cambio (al menos `node --check` de los archivos tocados).
+2. Commit + `git push origin master` → actualiza GitHub y Render.
+3. `npx vercel --prod --yes --scope jacob14-416e` → actualiza Vercel.
+
+**Usar siempre el proyecto de Vercel existente `8bits-battle`; nunca crear uno nuevo** (el usuario lo pidió expresamente).
+
+## Vercel sin auto-deploy por GitHub
+
+`vercel git connect` falla dos veces (al crear el proyecto y el 2026-09-28):
+`Error: Failed to connect jacobmelendezjm-tech/8-BITS-BATTLE to project.`
+Causa probable: la GitHub App de Vercel no tiene acceso al repo. Para arreglarlo el usuario debe, con su cuenta:
+1. https://github.com/settings/installations → Vercel → Configure → Repository access → añadir `8-BITS-BATTLE`.
+2. En Vercel, tarjeta del proyecto `8bits-battle` → **Connect Git Repository** → elegir el repo, rama de producción `master`.
+
+Cuando esté conectado, el paso 3 del flujo de publicación deja de ser necesario (actualizar `CLAUDE.md`).
+
+## Equipo del aula ("Alumno")
+
+- Carpeta de trabajo: `C:\Users\Alumno\Desktop\8-BITS-BATTLE-master\8-BITS-BATTLE-master`. Venía de un ZIP; se convirtió en clon git del repo (remote `origin`, rama `master`) el 2026-09-28.
+- Identidad git configurada en el repo: `jacobmelendezjm-tech <jacobmelendez.jm@gmail.com>`.
+- La CLI de Vercel tiene sesión iniciada con la cuenta del usuario y la carpeta está enlazada (`.vercel/`, ignorado por git). Es un equipo compartido: si hace falta, `npx vercel logout`.
+- No está instalado `gh` ni la CLI de Vercel global (se usa `npx vercel`).
 
 ## Arquitectura de doble modo (LAN + online)
 
 El juego funciona en dos modos sin tocar código, gracias a `public/client.js`:
 
-- **LAN/local** (`INICIAR.bat`, `npm start`): el cliente se conecta al mismo host que sirvió la página (`ws://${location.host}`), igual que siempre.
-- **Online** (Vercel + Render): si `location.hostname` está en `VERCEL_HOSTS` (array en `client.js`), el cliente ignora el host actual y se conecta directo a `RENDER_WS_URL` (`wss://eightbits-battle.onrender.com`).
+- **LAN/local** (`INICIAR.bat`, `npm start`): el cliente se conecta al mismo host que sirvió la página (`ws://${location.host}`).
+- **Online** (Vercel + Render): si `location.hostname` está en `VERCEL_HOSTS`, el cliente se conecta directo a `RENDER_WS_URL` (`wss://eightbits-battle.onrender.com`).
 
 Si se cambia el dominio de Vercel o la URL de Render, hay que actualizar esas dos constantes en `public/client.js` y volver a desplegar ambos lados.
 
-## Detección de "host" (profesor) — cambiada para soportar online
+## Detección de "host"
 
-Antes: solo era host quien se conectaba desde `127.0.0.1`/`::1` (el propio equipo del profesor en LAN).
+- En LAN, quien se conecta desde `127.0.0.1`/`::1` (el equipo del profesor) es siempre host. Ojo al probar con varias pestañas en el mismo equipo: todas son host.
+- Online nadie viene de localhost, así que **el primer jugador que se conecta sin host asignado pasa a serlo** (`hostAssigned`). Si el host se desconecta, el servidor asciende al siguiente conectado y le manda `{t:'host'}`.
 
-Problema: en un despliegue online nadie se conecta desde localhost, así que nadie podría pulsar "EMPEZAR PARTIDA".
+## Decisiones de diseño del juego de carreras
 
-Solución implementada en `server.js`: se mantiene la detección por IP local (prioridad, para LAN), y además **el primer jugador que se conecta mientras no haya host asignado se convierte en host** (variable `hostAssigned`). Al desconectarse el host, se libera el puesto para el siguiente que entre.
-
-## Intento fallido: Vercel + GitHub auto-deploy
-
-Al crear el proyecto en Vercel (`vercel link --yes --project 8bits-battle`), el paso de conectar el repo de GitHub falló:
-`Error: Failed to connect jacobmelendezjm-tech/8-BITS-BATTLE to project.`
-No se investigó la causa a fondo (posible permiso de la GitHub App de Vercel). Por eso el deploy a Vercel es manual por ahora. Si se quiere automatizar, revisar en el dashboard de Vercel → Settings → Git si el repo se puede conectar desde ahí.
+- **Elección de pista** (pedida por el usuario): con 1-2 pilotos elige el host; con 3 o más, votación (`HOST_PICK_MAX` en `server.js`). Empates → sorteo entre las empatadas.
+- **Cada cliente simula su propio coche** (antes el servidor era autoritativo). Se eligió para que la conducción no tenga retraso online (Render). El servidor confía en los clientes: aceptable en el aula, pero se pueden hacer trampas.
+- No hay coches de IA: se quitaron cuando el usuario pidió el modo multijugador. Queda un piloto automático que conduce tu coche tras cruzar la meta.
+- La dificultad de las pistas se verificó con scripts de Node (sin commitear): separación mínima entre tramos, radio de curva mínimo y una simulación de 4 vueltas. Resultado: Normal 6 curvas / 0 cerradas, Difícil 12 / 6, Extrema 16 / 11; vueltas óptimas ≈ 11 s / 18 s / 29 s. Si se tocan los puntos de una pista, repetir esa comprobación.
+- Lo que no se probó: el juego en un navegador real (solo sintaxis, física y servidor con clientes simulados).
 
 ## Cuentas usadas
 
 - GitHub: `jacobmelendezjm-tech`
-- Vercel: `jacobmelendezjm-tech` (team/scope `jacob14-416e`)
+- Vercel: `jacobmelendezjm-tech` (team/scope `jacob14-416e`, plan hobby)
 - Render: cuenta del profesor (jacobmelendez.jm@gmail.com), conectada a GitHub
 
-## Otros cambios relevantes
+## Otros
 
-- **2026-09-28: el juego pasó de battle royale (8 BITS BATTLE) a carreras (8 BITS RACING).** Los despliegues, dominios y la lógica de host/`VERCEL_HOSTS`/`RENDER_WS_URL` se mantienen igual. Diferencia clave de arquitectura: ahora cada cliente simula su propio coche (antes el servidor era autoritativo) y el servidor carga `public/tracks.js` con `require`, así que Render necesita ese archivo en el repo.
-- 2026-09-28: el usuario pidió actualización automática de GitHub y Vercel. Regla en `CLAUDE.md`: tras cada cambio, commit + push a `master`. Ese mismo día se desplegó el juego nuevo en el proyecto existente `8bits-battle` con la CLI (sesión iniciada en el equipo del aula "Alumno", carpeta enlazada). `vercel git connect` volvió a fallar por permisos de la GitHub App de Vercel sobre el repo, así que de momento tras cada push se despliega también con `npx vercel --prod --yes --scope jacob14-416e`. En este equipo no está instalado `gh`.
-- Regla pedida por el usuario: con 1-2 pilotos la pista la elige el host; con 3 o más, votación (`HOST_PICK_MAX` en `server.js`).
-
-- `INICIAR.bat` ahora detecta si falta Node.js y lo instala solo con `winget` (paquete `OpenJS.NodeJS.LTS`) antes de arrancar el servidor.
-- `package.json` tiene `"dev": "start https://8bits-battle.vercel.app"` — `npm run dev` abre el juego online directamente en el navegador (Windows).
+- `INICIAR.bat` detecta si falta Node.js y lo instala solo con `winget` (paquete `OpenJS.NodeJS.LTS`) antes de arrancar el servidor.
+- `package.json` tiene `"dev": "start https://8bits-battle.vercel.app"`: `npm run dev` abre el juego online en el navegador (Windows).
