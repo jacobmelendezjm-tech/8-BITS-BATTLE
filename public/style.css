@@ -432,3 +432,13 @@ body.touch.spectator .pads { display: none !important; }
   .pad { width: 66px; height: 66px; font-size: 20px; }
   .pad-a { margin-bottom: 18px; }
 }
+
+/* Flechas del teclado en los textos de ayuda: la fuente pixelada no tiene esos
+   símbolos y el navegador los pinta diminutos, así que usan una fuente normal */
+.arr {
+  font-family: 'Segoe UI Symbol', 'Arial Unicode MS', Arial, sans-serif;
+  font-size: 1.5em;
+  font-weight: bold;
+  line-height: 1;
+  vertical-align: -1px;
+}

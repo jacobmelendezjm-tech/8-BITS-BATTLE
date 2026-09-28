@@ -160,23 +160,35 @@ const sound = {
 };
 addEventListener('pointerdown', () => sound.init());
 
-// ---------- Entrada (W A S D) ----------
+// ---------- Entrada (W A S D o flechas) ----------
 const keys = { w: false, a: false, s: false, d: false };
-const KEYMAP = { KeyW: 'w', KeyA: 'a', KeyS: 's', KeyD: 'd' };
+const KEYMAP = {
+  KeyW: 'w', KeyA: 'a', KeyS: 's', KeyD: 'd',
+  ArrowUp: 'w', ArrowLeft: 'a', ArrowDown: 's', ArrowRight: 'd',
+};
+// Se guarda cada tecla física: si mantienes W y ↑ y sueltas una, sigues acelerando
+const held = new Set();
+function syncKeys() {
+  for (const k of Object.keys(keys)) keys[k] = false;
+  for (const code of held) keys[KEYMAP[code]] = true;
+}
 
 addEventListener('keydown', e => {
   if (e.target instanceof HTMLInputElement) return;
   sound.init();
-  const k = KEYMAP[e.code];
-  if (k) { keys[k] = true; e.preventDefault(); return; }
+  if (KEYMAP[e.code]) {
+    held.add(e.code);
+    syncKeys();
+    e.preventDefault();                    // que las flechas no muevan la página
+    return;
+  }
   if (e.code === 'KeyM') sound.toggle();
   if (e.code === 'KeyF' && FS_SUPPORTED) toggleFullscreen();
 });
 addEventListener('keyup', e => {
-  const k = KEYMAP[e.code];
-  if (k) keys[k] = false;
+  if (held.delete(e.code)) syncKeys();
 });
-addEventListener('blur', () => { keys.w = keys.a = keys.s = keys.d = false; });
+addEventListener('blur', () => { held.clear(); syncKeys(); });
 
 // ---------- Controles táctiles (móviles) ----------
 // Stick a la izquierda: solo gira (analógico, cuanto más lo empujas más gira).
@@ -841,7 +853,11 @@ function drawHud(r) {
     }
     if (car) {
       if (IS_TOUCH) text('STICK: GIRAR · A: ACELERAR · B: FRENAR', VIEW_W / 2, VIEW_H / 2 + 40, 10, '#fff1e8', 'center', maxW);
-      else text('W ACELERAR  S FRENAR  A/D GIRAR', VIEW_W / 2, VIEW_H - 110, 10, '#fff1e8', 'center');
+      else {
+        // Sin símbolos de flecha: la fuente pixelada no los tiene y salen diminutos
+        text('W / FLECHA ARRIBA: ACELERAR   S / FLECHA ABAJO: FRENAR', VIEW_W / 2, VIEW_H - 124, 10, '#fff1e8', 'center', VIEW_W - 24);
+        text('A-D / FLECHAS IZQUIERDA-DERECHA: GIRAR', VIEW_W / 2, VIEW_H - 104, 10, '#fff1e8', 'center', VIEW_W - 24);
+      }
     }
   }
 

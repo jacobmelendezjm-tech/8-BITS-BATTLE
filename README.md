@@ -24,7 +24,7 @@ La primera vez, Windows pedirá permiso en el firewall para Node.js: marca **Red
 Salirse del asfalto (hierba/tierra) frena mucho, y el muro de neumáticos te devuelve a la pista.
 
 ## Controles
-- **Ordenador:** **W** acelerar · **S** frenar / marcha atrás · **A** girar a la izquierda · **D** girar a la derecha · **M** sonido · **F** pantalla completa
+- **Ordenador:** **W** o **↑** acelerar · **S** o **↓** frenar / marcha atrás · **A** o **←** girar a la izquierda · **D** o **→** girar a la derecha · **M** sonido · **F** pantalla completa
 - **Móvil / tablet:** la carrera ocupa toda la pantalla (mejor en horizontal, también funciona en vertical). **Stick** abajo a la izquierda para girar (cuanto más lo empujas, más gira) · botón **A** acelerar · botón **B** frenar / marcha atrás. Se puede girar y acelerar a la vez con dos dedos.
 
 ## Pantalla completa
