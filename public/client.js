@@ -93,7 +93,9 @@ const built = [...TRACKS, ...REAL_TRACKS].map(buildTrack);
 const trackById = id => built.find(t => t.def.id === id);
 const arenaById = id => ARENAS.find(a => a.id === id);
 const buildArena = a => ({ def: a, arena: a, bounds: arenaBounds(a) });
-const hpColor = hp => (hp > 60 ? '#00e436' : hp > 30 ? '#ffec27' : '#ff004d');
+// Vida en barritas: verde con 3,5 o más, amarillo de 2 a 3, rojo con 1,5 o menos
+const hpColor = hp => (hp / DERBY.START_HP > 0.6 ? '#00e436' : hp / DERBY.START_HP > 0.3 ? '#ffec27' : '#ff004d');
+const fmtBars = hp => (hp % 1 ? `${Math.floor(hp)},5` : String(hp));
 function fmtClock(ms) {
   const sec = Math.max(0, Math.ceil(ms / 1000));
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
@@ -1546,18 +1548,37 @@ function drawPickups(r) {
   }
 }
 
-// Escudo, humo y barra de vida de cada coche en demolición
+// Dibuja la vida en barritas (llenas, medias o vacías)
+function drawBars(x, y, w, h, hp, gap = 3) {
+  const n = DERBY.START_HP, segW = (w - gap * (n - 1)) / n, col = hpColor(hp);
+  for (let i = 0; i < n; i++) {
+    const sx = Math.round(x + i * (segW + gap)), sw = Math.round(segW);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(sx - 1, y - 1, sw + 2, h + 2);
+    ctx.fillStyle = '#2a2233';                       // hueco vacío
+    ctx.fillRect(sx, y, sw, h);
+    const fill = Math.max(0, Math.min(1, hp - i));   // 1 = llena, 0,5 = media, 0 = vacía
+    if (fill > 0) {
+      ctx.fillStyle = col;
+      ctx.fillRect(sx, y, Math.round(sw * fill), h);
+      ctx.fillStyle = 'rgba(255,255,255,.35)';       // brillo
+      ctx.fillRect(sx, y, Math.round(sw * fill), Math.max(1, Math.round(h / 4)));
+    }
+  }
+}
+
+// Escudo, humo y barritas de vida de cada coche en demolición
 function drawDerbyExtras(o, p) {
   if (!p) return;
   const x = Math.round(o.x), y = Math.round(o.y), fr = race.frame;
-  if (p.hp <= 40) {
+  if (p.hp / DERBY.START_HP <= 0.4) {             // con 2 barritas o menos echa humo
     for (let k = 0; k < 3; k++) {
       const t = (fr * 0.7 + k * 23 + p.id * 37) % 60;
       const sz = 6 + t / 5;
       ctx.fillStyle = `rgba(40,36,44,${Math.max(0, 0.55 - t / 110)})`;
       ctx.fillRect(Math.round(x - sz / 2 + Math.sin((t + k) * 0.3) * 6), Math.round(y - 8 - t * 0.7), sz, sz);
     }
-    if (p.hp <= 20 && fr % 10 < 5) { ctx.fillStyle = '#ffa300'; ctx.fillRect(x - 4, y - 4, 8, 8); }
+    if (p.hp / DERBY.START_HP <= 0.2 && fr % 10 < 5) { ctx.fillStyle = '#ffa300'; ctx.fillRect(x - 4, y - 4, 8, 8); }
   }
   if (p.sh > 0 && (p.sh > 2000 || fr % 10 < 6)) {
     const rad = 27 * DERBY.CAR_SCALE + Math.sin(fr * 0.2) * 2;
@@ -1565,11 +1586,8 @@ function drawDerbyExtras(o, p) {
     ctx.fillStyle = 'rgba(41,173,255,.18)'; ctx.fill();
     ctx.strokeStyle = 'rgba(41,173,255,.95)'; ctx.lineWidth = 3; ctx.stroke();
   }
-  const bw = 48, by = Math.round(y + 21 * DERBY.CAR_SCALE);
-  ctx.fillStyle = '#000';
-  ctx.fillRect(x - bw / 2 - 1, by, bw + 2, 7);
-  ctx.fillStyle = hpColor(p.hp);
-  ctx.fillRect(x - bw / 2, by + 1, Math.round(bw * p.hp / 100), 5);
+  const bw = 54, by = Math.round(y + 21 * DERBY.CAR_SCALE);
+  drawBars(x - bw / 2, by + 1, bw, 6, p.hp, 2);
 }
 
 // Marcador. En ordenador: minimapa y velocímetro abajo. En móvil van en la
@@ -1733,12 +1751,10 @@ function drawDerbyHud(r) {
   if (me) {
     const bw = c ? 200 : 240, hp = me.al ? me.hp : 0;
     box(12, 12, bw, 78);
-    text('VIDA', 26, 26, 10, '#ffec27');
-    text(`${hp}%`, 26, 42, 22, hpColor(hp));
-    if (!me.al) text('K.O.', 12 + bw - 14, 44, 16, '#ff004d', 'right');
-    else if (me.sh > 0) text(`ESCUDO ${Math.ceil(me.sh / 1000)}s`, 12 + bw - 14, 26, 8, '#29adff', 'right');
-    ctx.fillStyle = '#000'; ctx.fillRect(26, 70, bw - 28, 8);
-    ctx.fillStyle = hpColor(hp); ctx.fillRect(26, 70, Math.round((bw - 28) * hp / 100), 8);
+    text(`VIDA ${fmtBars(hp)}/${DERBY.START_HP}`, 26, 26, 10, '#ffec27');
+    if (me.al && me.sh > 0) text(`ESCUDO ${Math.ceil(me.sh / 1000)}s`, 12 + bw - 14, 26, 8, '#29adff', 'right');
+    drawBars(26, 46, bw - 28, 26, hp, 4);
+    if (!me.al) text('K.O.', 12 + bw / 2, 50, 16, '#ff004d', 'center');
   } else {
     box(12, 12, c ? 160 : 300, 44);
     text('MODO ESPECTADOR', 26, c ? 30 : 28, c ? 8 : 10, '#ffec27');
@@ -1808,7 +1824,8 @@ function drawDerbyHud(r) {
     ctx.fillStyle = o.color;
     ctx.fillRect(24, ly + 12 + i * 18, 8, 8);
     text(`${pos} ${o.name}`, 40, ly + 11 + i * 18, 8, o.me ? '#ffec27' : o.al ? '#fff1e8' : '#83769c');
-    text(o.al ? `${o.hp}%` : 'K.O.', 220, ly + 11 + i * 18, 8, o.al ? hpColor(o.hp) : '#ff004d', 'right');
+    if (o.al) drawBars(176, ly + 12 + i * 18, 44, 7, o.hp, 1);
+    else text('K.O.', 220, ly + 11 + i * 18, 8, '#ff004d', 'right');
   });
 
   if (me && !me.al && snap.ph === 'playing') {
@@ -1818,6 +1835,13 @@ function drawDerbyHud(r) {
 }
 
 // ---------- Resultados ----------
+// Barritas de vida en HTML (tabla de resultados)
+function barsHtml(hp) {
+  let h = `<span class="bars" style="--bc:${hpColor(hp)}">`;
+  for (let i = 0; i < DERBY.START_HP; i++) h += `<i class="${hp - i >= 1 ? 'full' : hp - i > 0 ? 'half' : ''}"></i>`;
+  return h + `</span> ${fmtBars(hp)}`;
+}
+
 function showResults(s) {
   const body = $('resultsBody');
   body.innerHTML = '';
@@ -1830,7 +1854,7 @@ function showResults(s) {
     if (p.id === myId) tr.className = 'me';
     const name = `<td>${p.pos}º</td><td><span class="dot" style="background:${esc(p.c)}"></span>${esc(p.n)}</td>`;
     if (derby) {
-      tr.innerHTML = name + `<td>${p.al ? p.hp + '%' : 'ELIMINADO'}</td><td>${p.ko || 0}</td>`;
+      tr.innerHTML = name + `<td>${p.al ? barsHtml(p.hp) : 'ELIMINADO'}</td><td>${p.ko || 0}</td>`;
     } else {
       const nl = s.nl || LAPS, time = p.fin ? fmtMs(p.t) : `VUELTA ${Math.min(nl, p.lp + 1)}/${nl}`;
       tr.innerHTML = name + `<td>${time}</td><td>${fmtMs(p.best)}</td>`;
@@ -1936,8 +1960,8 @@ function buildCards() {
       <span class="diff">${a.diff} <span class="stars">NUEVO</span></span>
       <canvas width="260" height="170"></canvas>
       <span class="tname">${a.name}</span>
-      <span class="stat">VIDA <b>${DERBY.START_HP}%</b> · GOLPE <b>-${DERBY.HIT_SOFT}%</b> · FUERTE <b>-${DERBY.HIT_HARD}%</b></span>
-      <span class="stat">BOTIQUÍN <b>+${DERBY.HEAL}%</b> CADA <b>${DERBY.HEAL_EVERY / 1000}s</b></span>
+      <span class="stat">VIDA <b>${DERBY.START_HP} BARRITAS</b> · GOLPE SUAVE <b>-MEDIA</b> · FUERTE <b>-1</b></span>
+      <span class="stat">BOTIQUÍN <b>+${DERBY.HEAL} BARRITA</b> CADA <b>${DERBY.HEAL_EVERY / 1000}s</b></span>
       <span class="stat">ESCUDO <b>${DERBY.SHIELD_MS / 1000}s</b> CADA <b>${DERBY.SHIELD_EVERY / 1000}s</b> · <b>¡ÚLTIMO EN PIE GANA!</b></span>
       <span class="votes" hidden></span>`;
     drawArenaPreview(btn.querySelector('canvas'), a);
@@ -2138,7 +2162,7 @@ function derbyEvent(e) {
   const mine = e.id === myId;
   switch (e.k) {
     case 'dmg':
-      if (o) fx(o.x, o.y - 32 * DERBY.CAR_SCALE, `-${e.d}%`, '#ff004d', e.d >= DERBY.HIT_HARD ? 18 : 12);
+      if (o) fx(o.x, o.y - 32 * DERBY.CAR_SCALE, e.d < 1 ? '-MEDIA BARRITA' : `-${e.d} BARRITA`, '#ff004d', e.d >= DERBY.HIT_HARD ? 16 : 11);
       if (mine) {
         race.hurt = race.frame + (e.d >= DERBY.HIT_HARD ? 30 : 16);
         shake = Math.max(shake, e.d >= DERBY.HIT_HARD ? 10 : 5);
@@ -2150,7 +2174,7 @@ function derbyEvent(e) {
       if (mine) sound.beep(1200, 0.08);
       break;
     case 'heal':
-      if (o) fx(o.x, o.y - 32 * DERBY.CAR_SCALE, `+${e.d}%`, '#00e436', 14);
+      if (o) fx(o.x, o.y - 32 * DERBY.CAR_SCALE, `+${e.d} BARRITA`, '#00e436', 14);
       if (mine) { sound.beep(880, 0.1); setTimeout(() => sound.beep(1318, 0.15), 90); }
       break;
     case 'shield':

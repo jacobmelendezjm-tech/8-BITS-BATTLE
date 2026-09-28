@@ -59,11 +59,11 @@ Comprobado con simulación: se puede terminar (unos 5 min a ritmo prudente sin c
 
 ## Modo demolición (ARENA DEL CAOS)
 Se elige como una pista más (la tarjeta rosa de la sala). Arena ovalada cerrada con 4 pilares de neumáticos. En la arena los coches son un 50% más grandes que en las carreras, para que sea más fácil golpearse.
-- Todos empiezan con **100% de vida**. Con 0% quedas eliminado (K.O.) y pasas a mirar.
-- **Golpe corto** (embistes a poca velocidad, sin carrerilla): quita **5%** al golpeado.
-- **Golpe fuerte** (embistes desde lejos, a más de ~165 km/h en el marcador): quita **20%**.
+- La vida va en **barritas**: todos empiezan con **5 barritas**. Sin barritas quedas eliminado (K.O.) y pasas a mirar.
+- **Golpe suave** (embistes a poca velocidad, sin carrerilla): quita **media barrita** al golpeado.
+- **Golpe fuerte** (embistes desde lejos, a más de ~165 km/h en el marcador): quita **1 barrita**.
 - Solo cuenta un golpe nuevo si los coches se habían separado: empujar pegado a otro no le quita vida sin parar.
-- **Botiquines** (cruz roja, **+20%**): cada **30 s** aparece 1 por cada 2 jugadores vivos (mínimo 1). Con la vida llena no se gastan.
+- **Botiquines** (cruz roja, **+1 barrita**): cada **30 s** aparece 1 por cada 2 jugadores vivos (mínimo 1). Con la vida llena no se gastan.
 - **Escudos** (azules, **10 s de inmunidad**): cada **40 s** aparece 1 por cada 2 jugadores vivos (mínimo 1).
 - Gana el **último en pie**. Si pasan **3 minutos**, gana quien tenga más vida.
 

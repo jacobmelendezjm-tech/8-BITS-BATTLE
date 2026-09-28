@@ -76,8 +76,9 @@ Petición literal: "modo estilo wreckfest", vida 100%, "cada golpe cercano quite
 Decisiones tomadas por Claude (no las pidió el usuario; revisar si pide cambios):
 - "Golpe cercano / lejano" se interpretó como la velocidad de embestida: corto sin carrerilla = 5%, con carrerilla ≥ 5,5 px/frame (≈165 km/h) = 20%. Umbrales en `DERBY` de `tracks.js`.
 - El daño lo recibe el golpeado; en un choque de frente, los dos.
-- Empujar pegado no quita vida; los rebotes que vuelven a chocar sí (5% cada uno).
-- Objetos: "por cada 2 jugadores" = jugadores **vivos**, mínimo 1; cada oleada rellena hasta ese número (no se acumulan). Botiquín no se gasta con 100%.
+- Empujar pegado no quita vida; los rebotes que vuelven a chocar sí (golpe suave cada uno).
+- **Cambio posterior del usuario:** la vida pasó de porcentaje a **5 barritas**: golpe fuerte −1 barrita, golpe suave −½ barrita (antes 20% y 5%: el suave ahora hace el doble), botiquín +1 barrita (= el 20% de antes). `DERBY`: `START_HP 5, HIT_SOFT 0.5, HIT_HARD 1, HEAL 1`.
+- Objetos: "por cada 2 jugadores" = jugadores **vivos**, mínimo 1; cada oleada rellena hasta ese número (no se acumulan). Botiquín no se gasta con la vida llena.
 - Límite de 3 minutos (gana quien tenga más vida) para que la partida siempre acabe.
 - Se elige como una pista más (4ª tarjeta), con la misma regla host/votación.
 - Después el usuario pidió coches más grandes en la arena ("son muy pequeños y es difícil golpearse"): `DERBY.CAR_SCALE = 1.5` (dibujo y choque). En las carreras siguen igual.

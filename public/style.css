@@ -167,6 +167,12 @@ button.secondary { background: #065ab5; box-shadow: inset -4px -4px 0 #1d2b53, 4
 .track .tname { color: var(--text); font-size: 12px; }
 .track .stat { color: var(--dim); font-size: 8px; }
 .track .stat b { color: var(--text); font-weight: normal; }
+/* Barritas de vida (demolición, tabla de resultados) */
+.bars { display: inline-flex; gap: 2px; vertical-align: -1px; }
+.bars i { width: 9px; height: 10px; background: #2a2233; box-shadow: 0 0 0 1px #000; }
+.bars i.full { background: var(--bc); }
+.bars i.half { background: linear-gradient(90deg, var(--bc) 50%, #2a2233 50%); }
+
 /* Sección de pistas reales a escala */
 .section-title {
   display: flex;

@@ -655,12 +655,14 @@ function locate(track, x, y, hint, win = 20) {
 //  que da su propio coche (es el que conoce su velocidad exacta).
 // ============================================================
 const DERBY = {
-  START_HP: 100,
-  HIT_SOFT: 5,           // golpe corto, sin carrerilla
-  HIT_HARD: 20,          // golpe desde lejos / con mucha velocidad
+  // La vida se cuenta en BARRITAS (pedido del usuario): 5 barritas; un golpe
+  // fuerte quita 1 y uno suave, media. Siempre son múltiplos de 0,5.
+  START_HP: 5,           // barritas de vida al empezar
+  HIT_SOFT: 0.5,         // golpe corto, sin carrerilla: media barrita
+  HIT_HARD: 1,           // golpe desde lejos / con mucha velocidad: una barrita
   SOFT_MIN: 1.2,         // velocidad de embestida (px/frame) mínima para hacer daño
   HARD_MIN: 5.5,         // a partir de aquí el golpe es fuerte (≈ 165 km/h en el marcador)
-  HEAL: 20,              // un botiquín recupera 20%
+  HEAL: 1,               // un botiquín recupera 1 barrita
   HEAL_EVERY: 30000,     // aparecen botiquines cada 30 s
   SHIELD_EVERY: 40000,   // aparecen escudos cada 40 s
   SHIELD_MS: 10000,      // un escudo da 10 s de inmunidad
