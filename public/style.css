@@ -337,37 +337,33 @@ body.touch.results .pads,
 body.touch.spectator .dpad,
 body.touch.spectator .pads { display: none !important; }
 
-/* Cruceta de flechas estilo PlayStation (izquierda) */
+/* Flechas ← → estilo PlayStation (izquierda) */
 .dpad {
-  --arm: 56px;
+  --arm: 72px;
   position: fixed;
   z-index: 10;
   left: calc(env(safe-area-inset-left, 0px) + 16px);
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
-  display: grid;
-  grid-template-columns: repeat(3, var(--arm));
-  grid-template-rows: repeat(3, var(--arm));
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+  display: flex;
+  gap: 8px;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
   filter: drop-shadow(4px 4px 0 rgba(0,0,0,.65));
 }
-.dpad .arm, .dpad .hub {
-  background: #c2c3c7;
-  pointer-events: none;           /* el dedo lo sigue la cruceta entera */
-}
 .dpad .arm {
+  width: calc(var(--arm) * 1.1);
+  height: var(--arm);
   display: flex;
   align-items: center;
   justify-content: center;
+  background: #c2c3c7;
   box-shadow: inset -4px -4px 0 #83769c, inset 3px 3px 0 #fff1e8;
+  pointer-events: none;           /* el dedo lo siguen las dos flechas a la vez */
 }
-.dpad .up    { grid-area: 1 / 2; border-radius: 10px 10px 0 0; }
-.dpad .left  { grid-area: 2 / 1; border-radius: 10px 0 0 10px; }
-.dpad .hub   { grid-area: 2 / 2; }
-.dpad .right { grid-area: 2 / 3; border-radius: 0 10px 10px 0; }
-.dpad .down  { grid-area: 3 / 2; border-radius: 0 0 10px 10px; }
+.dpad .left  { border-radius: 14px 4px 4px 14px; }
+.dpad .right { border-radius: 4px 14px 14px 4px; }
 .dpad svg { width: 44%; height: 44%; fill: #5f574f; }
 .dpad .arm.on {
   background: var(--accent);
@@ -411,7 +407,7 @@ body.touch.spectator .pads { display: none !important; }
 
 /* Móviles en horizontal con poca altura */
 @media (max-height: 380px) {
-  .dpad { --arm: 46px; bottom: calc(env(safe-area-inset-bottom, 0px) + 10px); }
+  .dpad { --arm: 60px; bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); }
   .pads { bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); gap: 10px; }
   .pad { width: 66px; height: 66px; font-size: 20px; }
   .pad-a { margin-bottom: 18px; }

@@ -19,7 +19,7 @@ const STEP_MS = 1000 / 60;         // física a 60 pasos por segundo
 const CAR_R = 13;                  // radio de choque entre coches
 const CURB = 10;                   // ancho del piano rojo/blanco
 
-// En móviles/tablets el juego ocupa toda la pantalla y se maneja con una cruceta táctil
+// En móviles/tablets el juego ocupa toda la pantalla y se maneja con flechas y botones táctiles
 const IS_TOUCH = matchMedia('(pointer: coarse)').matches;
 if (IS_TOUCH) document.body.classList.add('touch');
 
@@ -191,37 +191,28 @@ addEventListener('keyup', e => {
 addEventListener('blur', () => { held.clear(); syncKeys(); });
 
 // ---------- Controles táctiles (móviles) ----------
-// Cruceta de 4 flechas estilo PlayStation a la izquierda: ← → giran, ↑ acelera,
-// ↓ frena (igual que las flechas del teclado). Como en un mando real, el pulgar
-// puede deslizarse por la cruceta sin levantarlo, y las diagonales cuentan
-// (↑+← acelera y gira a la vez). Botones A/B a la derecha.
-const dpad = { up: false, down: false, left: false, right: false, id: null };
+// Flechas ← → a la izquierda: solo giran. Las dos siguen al mismo dedo, así el
+// pulgar puede deslizarse de una a otra sin levantarlo. Botones A/B a la derecha.
+const dpad = { left: false, right: false, id: null };
 const dpadEl = $('dpad');
-const DPAD_DIRS = ['up', 'down', 'left', 'right'];
+const DPAD_DIRS = ['left', 'right'];
 
-function dpadSet(dirs) {
+function dpadSet(dir) {
   for (const d of DPAD_DIRS) {
-    dpad[d] = dirs.includes(d);
+    dpad[d] = d === dir;
     dpadEl.querySelector('.' + d).classList.toggle('on', dpad[d]);
   }
 }
-// Dirección según dónde está el dedo respecto al centro: 8 sectores de 45°
+// Mitad izquierda = ←, mitad derecha = →; el hueco del centro no activa nada
 function dpadMove(e) {
   const r = dpadEl.getBoundingClientRect();
-  const dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
-  if (Math.hypot(dx, dy) < r.width * 0.12) return dpadSet([]);        // centro: nada
-  const ang = Math.atan2(dy, dx) * 180 / Math.PI;                       // 0 = derecha, 90 = abajo
-  const dirs = [];
-  if (ang > -67.5 && ang < 67.5) dirs.push('right');
-  if (ang > 112.5 || ang < -112.5) dirs.push('left');
-  if (ang > -157.5 && ang < -22.5) dirs.push('up');
-  if (ang > 22.5 && ang < 157.5) dirs.push('down');
-  dpadSet(dirs);
+  const dx = e.clientX - (r.left + r.width / 2);
+  dpadSet(Math.abs(dx) < r.width * 0.04 ? null : dx < 0 ? 'left' : 'right');
 }
 function dpadRelease(e) {
   if (e && e.pointerId !== dpad.id) return;
   dpad.id = null;
-  dpadSet([]);
+  dpadSet(null);
 }
 dpadEl.addEventListener('pointerdown', e => {
   e.preventDefault();
@@ -237,7 +228,7 @@ dpadEl.addEventListener('lostpointercapture', dpadRelease);
 dpadEl.addEventListener('contextmenu', e => e.preventDefault());
 
 // Botones A (acelerar) y B (frenar). Cada uno sigue a su propio dedo,
-// así se puede girar con la cruceta y pulsar A a la vez.
+// así se puede girar con las flechas y pulsar A a la vez.
 const pads = { a: false, b: false };
 for (const [key, id] of [['a', 'btnGas'], ['b', 'btnBrake']]) {
   const el = $(id);
@@ -264,8 +255,8 @@ for (const [key, id] of [['a', 'btnGas'], ['b', 'btnBrake']]) {
 function playerControl() {
   return {
     steer: Math.max(-1, Math.min(1, (keys.d || dpad.right ? 1 : 0) - (keys.a || dpad.left ? 1 : 0))),
-    throttle: keys.w || pads.a || dpad.up ? 1 : 0,
-    brake: keys.s || pads.b || dpad.down ? 1 : 0,
+    throttle: keys.w || pads.a ? 1 : 0,
+    brake: keys.s || pads.b ? 1 : 0,
   };
 }
 
@@ -764,11 +755,11 @@ function draw() {
 }
 
 // Marcador. En ordenador: minimapa y velocímetro abajo. En móvil van en la
-// columna derecha, porque abajo están la cruceta (izquierda) y los botones A/B (derecha).
+// columna derecha, porque abajo están las flechas (izquierda) y los botones A/B (derecha).
 function drawHud(r) {
   const car = r.car;
   const c = compactHud();
-  const touchSafe = IS_TOUCH ? 210 : 12;           // hueco inferior para los controles táctiles
+  const touchSafe = IS_TOUCH ? 170 : 12;           // hueco inferior para los controles táctiles
   const m = r.mini, mw = m.canvas.width, mh = m.canvas.height;
   const timesW = c ? 196 : 250, fs = c ? 8 : 10;
   let rightY = 12;                                 // siguiente hueco libre en la columna derecha
