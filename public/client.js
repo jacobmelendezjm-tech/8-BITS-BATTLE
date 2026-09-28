@@ -21,6 +21,9 @@ const carScale = () => (race && race.mode === 'derby' ? DERBY.CAR_SCALE : 1);
 const carR = () => CAR_R * carScale();
 const CURB = 10;                   // ancho del piano rojo/blanco
 const FALL_FRAMES = 70;            // lo que dura la caída por un acantilado (~1,2 s)
+// Turbo para el último: más punta y aceleración hasta alcanzar al de delante
+// (se activa si va más de TURBO.on muestras por detrás y se apaga a TURBO.off)
+const TURBO = { speed: 1.3, accel: 1.5, on: 25, off: 8 };
 
 // En móviles/tablets el juego ocupa toda la pantalla y se maneja con flechas y botones táctiles
 const IS_TOUCH = matchMedia('(pointer: coarse)').matches;
@@ -146,6 +149,7 @@ const sound = {
       this.engine.connect(lp).connect(this.engineGain).connect(this.ctx.destination);
       this.engine.start();
     } catch { this.ctx = null; }
+    music.start();
   },
   setEngine(speed, on) {
     if (!this.ctx) return;
@@ -170,6 +174,121 @@ const sound = {
   toggle() {
     this.muted = !this.muted;
     store.set('8bits-racing.mute', this.muted ? '1' : '0');
+    music.apply();
+  },
+};
+
+// ---------- Música de fondo ----------
+// Chiptune ORIGINAL de estilo metal (riff grave en re menor con power chords,
+// batería y melodía). Si existe public/music.mp3 se usa ese archivo en su lugar
+// (solo con música que se tenga permiso para usar).
+const midi = n => 440 * Math.pow(2, (n - 69) / 12);
+const BASS = {   // 16 semicorcheas por compás; 0 = silencio
+  A1: [38, 0, 38, 38, 0, 38, 0, 41, 38, 0, 38, 38, 0, 43, 0, 41],
+  A2: [38, 0, 38, 38, 0, 38, 0, 41, 38, 0, 36, 0, 37, 0, 38, 0],
+  B1: [41, 0, 41, 41, 0, 41, 0, 43, 41, 0, 41, 41, 0, 45, 0, 43],
+  B2: [43, 0, 43, 43, 0, 43, 0, 45, 46, 0, 45, 0, 43, 0, 41, 0],
+};
+const LEAD = {
+  __: new Array(16).fill(0),
+  L1: [62, 0, 0, 0, 65, 0, 0, 0, 69, 0, 67, 0, 65, 0, 62, 0],
+  L2: [60, 0, 0, 0, 62, 0, 0, 0, 65, 0, 64, 0, 62, 0, 0, 0],
+  M1: [65, 0, 65, 0, 69, 0, 72, 0, 70, 0, 69, 0, 67, 0, 65, 0],
+  M2: [67, 0, 67, 0, 70, 0, 74, 0, 72, 0, 70, 0, 69, 0, 67, 0],
+  M3: [74, 0, 0, 72, 0, 0, 69, 0, 70, 0, 69, 0, 65, 0, 0, 0],
+  M4: [62, 0, 0, 0, 0, 0, 0, 0, 61, 0, 0, 0, 62, 0, 0, 0],
+};
+const SONG = [['A1', '__'], ['A2', '__'], ['A1', 'L1'], ['A2', 'L2'], ['B1', 'M1'], ['B2', 'M2'], ['A1', 'M3'], ['A2', 'M4']];
+const KICK = [1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0];
+const SNARE = [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0];
+
+const music = {
+  enabled: store.get('8bits-racing.music') !== '0',
+  out: null, noise: null, timer: null, step: 0, next: 0, audio: null, tempo: 150,
+  start() {
+    const ac = sound.ctx;
+    if (!ac || this.out) return;
+    this.out = ac.createGain();
+    this.out.connect(ac.destination);
+    const buf = ac.createBuffer(1, ac.sampleRate * 0.3, ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    this.noise = buf;
+    // ¿Hay una música propia en public/music.mp3?
+    fetch('music.mp3', { method: 'HEAD' }).then(r => {
+      if (r.ok && (r.headers.get('content-type') || '').includes('audio')) {
+        this.audio = new Audio('music.mp3');
+        this.audio.loop = true;
+        this.audio.volume = 0.4;
+      }
+    }).catch(() => {}).finally(() => {
+      if (!this.audio) {
+        this.next = ac.currentTime + 0.1;
+        this.timer = setInterval(() => this.schedule(), 25);
+      }
+      this.apply();
+    });
+  },
+  apply() {
+    const on = this.enabled && !sound.muted;
+    if (this.out) this.out.gain.value = on ? 0.05 : 0;
+    if (this.audio) { if (on) this.audio.play().catch(() => {}); else this.audio.pause(); }
+    for (const id of ['btnMusic', 'btnMusicLobby']) {
+      const b = $(id);
+      if (b) {
+        b.classList.toggle('off', !this.enabled);
+        b.querySelector('.mlabel').textContent = this.enabled ? 'MÚSICA: SÍ' : 'MÚSICA: NO';
+      }
+    }
+  },
+  toggle() {
+    this.enabled = !this.enabled;
+    store.set('8bits-racing.music', this.enabled ? '1' : '0');
+    sound.init();
+    this.apply();
+  },
+  // Programa las notas que tocan en los próximos 120 ms
+  schedule() {
+    const ac = sound.ctx, dt = 60 / this.tempo / 4;
+    if (this.next < ac.currentTime - 0.2) this.next = ac.currentTime + 0.05;   // la pestaña estuvo dormida
+    while (this.next < ac.currentTime + 0.12) {
+      const bar = SONG[Math.floor(this.step / 16) % SONG.length], k = this.step % 16, t = this.next;
+      const b = BASS[bar[0]][k], l = LEAD[bar[1]][k];
+      if (b) { this.tone(midi(b), t, 0.13, 'square', 0.55, 700); this.tone(midi(b) * 1.5, t, 0.13, 'square', 0.3, 700); }
+      if (l) this.tone(midi(l), t, 0.2, 'square', 0.32, 2600);
+      if (KICK[k]) this.kick(t);
+      if (SNARE[k]) this.hit(t, 0.12, 1200, 0.5);
+      if (k % 2 === 0) this.hit(t, 0.03, 7000, 0.18);
+      this.next += dt;
+      this.step = (this.step + 1) % (SONG.length * 16);
+    }
+  },
+  tone(freq, t, dur, type, vol, cut) {
+    const ac = sound.ctx, o = ac.createOscillator(), g = ac.createGain(), f = ac.createBiquadFilter();
+    o.type = type; o.frequency.value = freq;
+    f.type = 'lowpass'; f.frequency.value = cut;
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(f).connect(g).connect(this.out);
+    o.start(t); o.stop(t + dur + 0.02);
+  },
+  kick(t) {
+    const ac = sound.ctx, o = ac.createOscillator(), g = ac.createGain();
+    o.frequency.setValueAtTime(150, t);
+    o.frequency.exponentialRampToValueAtTime(40, t + 0.12);
+    g.gain.setValueAtTime(0.9, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    o.connect(g).connect(this.out);
+    o.start(t); o.stop(t + 0.16);
+  },
+  hit(t, dur, cut, vol) {
+    const ac = sound.ctx, s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+    s.buffer = this.noise;
+    f.type = 'highpass'; f.frequency.value = cut;
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    s.connect(f).connect(g).connect(this.out);
+    s.start(t); s.stop(t + dur + 0.02);
   },
 };
 addEventListener('pointerdown', () => sound.init());
@@ -197,6 +316,7 @@ addEventListener('keydown', e => {
     return;
   }
   if (e.code === 'KeyM') sound.toggle();
+  if (e.code === 'KeyN') music.toggle();
   if (e.code === 'KeyF' && FS_SUPPORTED) toggleFullscreen();
 });
 addEventListener('keyup', e => {
@@ -670,14 +790,14 @@ function stepCar(car, ctl) {
   let l = -car.vx * fy + car.vy * fx;
 
   const grass = car.surface === 2;
-  if (ctl.throttle) f += PHYS.accel * (grass ? 0.55 : 1) * ctl.throttle;
+  if (ctl.throttle) f += PHYS.accel * (grass ? 0.55 : 1) * ctl.throttle * (car.turbo ? TURBO.accel : 1);
   if (ctl.brake) {
     if (f > 0.15) f = Math.max(0, f - PHYS.brake * ctl.brake);
     else f -= PHYS.accel * 0.6 * ctl.brake;
   }
   if (!ctl.throttle && !ctl.brake) f *= 0.985;
   f *= grass ? 0.975 : car.surface === 1 ? 0.994 : 0.997;
-  f = Math.max(-PHYS.reverseMax, Math.min(PHYS.maxSpeed, f));
+  f = Math.max(-PHYS.reverseMax, Math.min(PHYS.maxSpeed * (car.turbo ? TURBO.speed : 1), f));
   if (grass && f > PHYS.grassMax) f = Math.max(PHYS.grassMax, f * 0.94);
   l *= car.oil > 0 ? 0.985 : grass ? 0.9 : 0.8;    // en aceite el coche resbala
   if (car.oil > 0) car.oil--;
@@ -889,7 +1009,7 @@ function setupRace(s) {
     car: me ? (derby ? makeDerbyCar(t, me.g, racersCount, me.c) : makeCar(t, me.g, me.c)) : null,
     remotes: new Map(),
     state: 'countdown', frame: 0, raceFrame: 0,
-    banner: null, cam: { x: 0, y: 0 }, lastBeep: 99,
+    banner: null, cam: { x: 0, y: 0 }, lastLit: 0, greenUntil: 0,
     newRecord: false, order: [],
     fx: [], hitCd: new Map(), touch: new Set(), hurt: 0,   // demolición
   };
@@ -919,11 +1039,12 @@ function update() {
     if (snap.ph === 'playing') {
       r.state = 'racing';
       r.raceFrame = Math.round(snap.rt / STEP_MS);
-      sound.beep(880, 0.4);
-      banner('¡YA!', '#00e436', 50);
+      sound.beep(880, 0.5);
+      banner('¡YA!', '#00e436', 60);
+      r.greenUntil = r.frame + 60;
     } else if (snap.ph === 'countdown') {
-      const n = Math.ceil(snap.left / 1000);
-      if (n <= 3 && n < r.lastBeep) { sound.beep(440, 0.18); r.lastBeep = n; }
+      const lit = lightsOn();
+      if (lit > r.lastLit) { sound.beep(440, 0.18); r.lastLit = lit; }
     }
   } else if (r.state === 'racing') {
     r.raceFrame++;
@@ -945,6 +1066,8 @@ function update() {
     checkLap(car);
     addSkid(car);
   }
+  // Turbo del último (solo carreras): se revisa siempre, también durante una caída
+  if (car && r.state === 'racing' && r.mode === 'race') updateTurbo(r, car);
   r.fx = r.fx.filter(e => e.until > r.frame);
 
   // Coches remotos: se acercan suavemente a la última posición recibida
@@ -997,10 +1120,33 @@ function update() {
   // Enviar mi posición (30 veces por segundo)
   if (car && r.frame % 2 === 0 && (snap.ph === 'countdown' || snap.ph === 'playing')) {
     send({
-      t: 'st', rid: r.rid, x: car.x, y: car.y, a: car.angle, fl: car.falling ? 1 : 0,
+      t: 'st', rid: r.rid, x: car.x, y: car.y, a: car.angle, fl: car.falling ? 1 : 0, tb: car.turbo ? 1 : 0,
       pg: car.progress, lp: car.lapsDone,
       best: car.bestLap != null ? car.bestLap * STEP_MS : null,
     });
+  }
+}
+
+// Luces rojas encendidas del semáforo (1..5): una más cada segundo
+function lightsOn() {
+  return Math.max(1, Math.min(5, 6 - Math.ceil(snap.left / 1000)));
+}
+
+// Turbo para el último: si va muy por detrás del coche que tiene delante, turbo
+// hasta alcanzarlo. Si se vuelve a quedar atrás, vuelve el turbo.
+function updateTurbo(r, car) {
+  const prev = car.turbo;
+  const others = r.order.filter(o => !o.me);
+  const last = r.order.length > 1 && r.order[r.order.length - 1].me;
+  if (car.finished || !others.length || !last) car.turbo = false;
+  else {
+    const gap = Math.min(...others.map(o => o.progress)) - car.progress;   // muestras hasta el de delante
+    if (!car.turbo && gap > TURBO.on) car.turbo = true;
+    else if (car.turbo && gap < TURBO.off) car.turbo = false;
+  }
+  if (car.turbo && !prev) {
+    banner('¡TURBO! ALCANZA A LOS DEMÁS', '#ffa300', 90);
+    [220, 330, 440, 660].forEach((fq, k) => setTimeout(() => sound.beep(fq, 0.1, 'sawtooth', 0.08), k * 50));
   }
 }
 
@@ -1059,6 +1205,12 @@ function drawCar(c, car) {
     c.globalAlpha = Math.max(0.25, f);
   }
   if (k !== 1) c.scale(k, k);                 // arena: coches más grandes
+  if (car.turbo || car.tb) {                  // llamas del turbo por el tubo de escape
+    const fl = 8 + Math.random() * 10;
+    c.fillStyle = '#ff004d'; c.fillRect(-19 - fl, -5, fl, 10);
+    c.fillStyle = '#ffa300'; c.fillRect(-19 - fl * 0.7, -4, fl * 0.7, 8);
+    c.fillStyle = '#ffec27'; c.fillRect(-19 - fl * 0.35, -2, fl * 0.35, 4);
+  }
   c.fillStyle = 'rgba(0,0,0,.35)';            // sombra
   c.fillRect(-16, -8, 34, 20);
   c.fillStyle = '#111';                       // ruedas
@@ -1269,9 +1421,10 @@ function drawHud(r) {
     const kmh = Math.round(Math.abs(car.fwd) * 30);
     text(String(kmh).padStart(3, '0'), sx + 14, sy + 16, 22, car.surface === 2 ? '#ffa300' : '#fff1e8');
     text('KM/H', sx + sw - 70, sy + 24, 10, '#ffec27');
+    if (car.turbo && r.frame % 20 < 14) text('TURBO', sx + sw - 14, sy + 8, 8, '#ffa300', 'right');
     const bw = sw - 28;
     ctx.fillStyle = '#000'; ctx.fillRect(sx + 14, sy + 46, bw, 6);
-    ctx.fillStyle = kmh > 240 ? '#ff004d' : '#00e436';
+    ctx.fillStyle = car.turbo ? '#ffa300' : kmh > 240 ? '#ff004d' : '#00e436';
     ctx.fillRect(sx + 14, sy + 46, Math.round(bw * Math.min(1, Math.abs(car.fwd) / PHYS.maxSpeed)), 6);
   }
 
@@ -1293,22 +1446,40 @@ function drawHud(r) {
   drawOverlays(r, c);
 }
 
+// Semáforo de salida: 5 luces; se enciende una roja por segundo y al final todas verdes
+function drawTrafficLight(lit, green) {
+  const rad = compactHud() ? 17 : 20, gap = rad * 2 + 12, w = gap * 5 + 16, h = rad * 2 + 24;
+  const x = Math.round(VIEW_W / 2 - w / 2), y = Math.round(VIEW_H / 2 - 70);
+  ctx.fillStyle = '#000'; ctx.fillRect(x + 4, y + 4, w, h);
+  ctx.fillStyle = '#16161a'; ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = '#5f574f'; ctx.lineWidth = 3; ctx.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3);
+  for (let i = 0; i < 5; i++) {
+    const cx = x + 8 + gap / 2 + i * gap, cy = y + h / 2;
+    const on = green || i < lit;
+    const col = green ? '#00e436' : on ? '#ff004d' : '#3a0a14';
+    if (on) {
+      ctx.fillStyle = green ? 'rgba(0,228,54,.25)' : 'rgba(255,0,77,.25)';
+      ctx.beginPath(); ctx.arc(cx, cy, rad + 6, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = on ? 'rgba(255,255,255,.45)' : 'rgba(255,255,255,.08)';
+    ctx.fillRect(Math.round(cx - rad / 2), Math.round(cy - rad / 2), Math.round(rad / 2.5), Math.round(rad / 2.5));
+  }
+}
+
 // Cuenta atrás, instrucciones y mensajes grandes (comunes a los dos modos)
 function drawOverlays(r, c) {
   const car = r.car;
   const derby = r.mode === 'derby';
   const maxW = VIEW_W - 24;
   if (r.state === 'countdown' && snap.ph === 'countdown') {
-    const n = Math.ceil(snap.left / 1000);
-    if (n > 3) {
-      text(r.t.def.name, VIEW_W / 2, VIEW_H / 2 - 70, 28, r.t.def.color, 'center', maxW);
-      text(derby ? 'DEMOLICIÓN · ¡GANA EL ÚLTIMO EN PIE!' : `DIFICULTAD ${r.t.def.diff} · ${LAPS} VUELTAS`,
-        VIEW_W / 2, VIEW_H / 2 - 20, 12, '#fff1e8', 'center', maxW);
-    } else if (n > 0) {
-      text(String(n), VIEW_W / 2, VIEW_H / 2 - 60, 72, n === 1 ? '#ffa300' : '#ff004d', 'center');
-    }
+    text(r.t.def.name, VIEW_W / 2, VIEW_H / 2 - 150, 28, r.t.def.color, 'center', maxW);
+    text(derby ? 'DEMOLICIÓN · ¡GANA EL ÚLTIMO EN PIE!' : `DIFICULTAD ${r.t.def.diff} · ${LAPS} VUELTAS`,
+      VIEW_W / 2, VIEW_H / 2 - 108, 12, '#fff1e8', 'center', maxW);
+    drawTrafficLight(lightsOn(), false);
     if (car) {
-      if (IS_TOUCH) text('FLECHAS IZQ-DER: GIRAR · A: ACELERAR · B: FRENAR', VIEW_W / 2, VIEW_H / 2 + 40, 10, '#fff1e8', 'center', maxW);
+      if (IS_TOUCH) text('FLECHAS IZQ-DER: GIRAR · A: ACELERAR · B: FRENAR', VIEW_W / 2, VIEW_H / 2 + 50, 10, '#fff1e8', 'center', maxW);
       else {
         // Sin símbolos de flecha: la fuente pixelada no los tiene y salen diminutos
         text('W / FLECHA ARRIBA: ACELERAR   S / FLECHA ABAJO: FRENAR', VIEW_W / 2, VIEW_H - 124, 10, '#fff1e8', 'center', VIEW_W - 24);
@@ -1316,6 +1487,8 @@ function drawOverlays(r, c) {
       }
     }
   }
+
+  if (r.greenUntil > r.frame) drawTrafficLight(5, true);
 
   // Mensajes
   if (r.banner && r.frame < r.banner.until) {
@@ -1668,6 +1841,7 @@ function onSnapshot(s) {
         race.remotes.set(p.id, o);
       }
       o.fl = !!p.fl;                                              // cayendo por un acantilado
+      o.tb = !!p.tb;                                              // con turbo
       o.vx = (p.x - (o.tx ?? p.x)) / 2;
       o.vy = (p.y - (o.ty ?? p.y)) / 2;
       o.tx = p.x; o.ty = p.y; o.ta = p.a;
@@ -1685,7 +1859,7 @@ function onSnapshot(s) {
     if (s.ph === 'ended' && $('results').hidden) showResults(s);
     if (s.ph === 'ended') $('resultsBack').textContent = `VOLVIENDO A LA SALA EN ${Math.ceil(s.left / 1000)}s`;
     $('btnStop').hidden = !isHost;
-    $('gameInfo').textContent = race ? `${race.t.def.name} · ${race.t.def.diff} · M: SONIDO${FS_SUPPORTED ? " · F: PANTALLA COMPLETA" : ""}` : '';
+    $('gameInfo').textContent = race ? `${race.t.def.name} · ${race.t.def.diff} · M: SONIDO · N: MÚSICA${FS_SUPPORTED ? " · F: PANTALLA COMPLETA" : ""}` : '';
   }
   document.body.classList.toggle('results', !$('results').hidden);
   document.body.classList.toggle('spectator', !(race && race.car));
@@ -1783,6 +1957,10 @@ $('btnFullscreen').addEventListener('click', e => {
   e.currentTarget.blur();          // que la barra espaciadora/Enter no lo vuelva a pulsar
 });
 $('btnStop').addEventListener('click', () => send({ t: 'stop' }));
+for (const id of ['btnMusic', 'btnMusicLobby']) {
+  $(id).addEventListener('click', e => { music.toggle(); e.currentTarget.blur(); });
+}
+music.apply();
 
 // ---------- Bucle principal ----------
 let last = performance.now(), acc = 0;

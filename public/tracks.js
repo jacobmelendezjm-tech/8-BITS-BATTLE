@@ -77,24 +77,38 @@ const TRACKS = [
     color: '#c02cff',
     width: 100,
     theme: { out: '#221536', runoff: '#3b2a4a', asphalt: '#3d3a48', deco: ['#7e2553', '#83769c', '#ff004d'] },
-    points: [
-      [600, 300], [1500, 300], [1850, 420], [1780, 760], [1450, 820],
-      [1350, 1100], [1700, 1250], [2050, 1050], [2150, 650], [2450, 350],
-      [2850, 420], [3000, 800], [2700, 1000], [2900, 1300], [2650, 1600],
-      [3000, 1900], [2750, 2250], [2200, 2150], [2350, 1800], [1950, 1650],
-      [1700, 1950], [1350, 1750], [1050, 2050], [740, 2070], [560, 1900],
-      [900, 1680], [420, 1330], [950, 980], [420, 650],
+    // Rectas y curvas circulares: [x, y, radio]. Las horquillas son semicírculos
+    // de radio 120 (dos esquinas de 90° separadas 240 px), como en un circuito real.
+    corners: [
+      [400, 300, 160], [1450, 300, 120],                          // recta de arriba
+      [1450, 900, 120], [1690, 900, 120],                         // peine de horquillas (arriba)
+      [1690, 480, 120], [1930, 480, 120],
+      [1930, 900, 120], [2170, 900, 120],
+      [2170, 300, 150], [3000, 300, 180],
+      [3000, 800, 120], [2450, 800, 120],                         // eses a la derecha
+      [2450, 1040, 120], [3000, 1040, 120],
+      [3000, 1280, 120], [2450, 1280, 120],
+      [2450, 1520, 120], [3000, 1520, 150],
+      [3000, 2200, 180], [2300, 2200, 120],                       // peine de horquillas (abajo)
+      [2300, 1800, 120], [2060, 1800, 120],
+      [2060, 2200, 120], [1820, 2200, 120],
+      [1820, 1800, 120], [1580, 1800, 120],
+      [1580, 2200, 160], [700, 2200, 160],
+      [700, 1900, 120], [1200, 1900, 120],                        // eses a la izquierda
+      [1200, 1660, 120], [500, 1660, 120],
+      [500, 1420, 120], [1200, 1420, 120],
+      [1200, 1180, 120], [400, 1180, 160],
     ],
-    // Peligros. Se colocan con el índice del punto de control y la fracción
-    // del camino hasta el siguiente, así no dependen de dónde quede la meta.
-    // Acantilados: [desde punto, hasta punto, lado] (L izquierda, R derecha, B ambos)
-    cliffs: [[0, 1, 'L'], [3, 5, 'R'], [9, 11, 'L'], [15, 17, 'L'], [22, 23, 'B'], [26, 27, 'B']],
-    // Aceite: [punto, fracción, lado (-1 izquierda .. 1 derecha)]
-    oil: [[1, 0.5, 0.3], [7, 0.5, -0.4], [10, 0.5, 0.35], [13, 0.4, -0.3], [18, 0.5, 0.3], [21, 0.5, -0.35], [25, 0.5, 0.3]],
-    // Barro: [punto, fracción, lado, largo en px]
-    mud: [[5, 0.5, 0, 90], [14, 0.5, 0.4, 70], [19, 0.5, -0.4, 80], [22, 0.5, 0, 70]],
-    // Bloques que van de lado a lado: [punto, fracción, periodo en ms]
-    pistons: [[0, 0.15, 2600], [8, 0.5, 2200], [11, 0.5, 2400], [16, 0.5, 2000], [20, 0.5, 2300], [27, 0.5, 2100]],
+    // Peligros. Se colocan con el índice de la esquina y la fracción del camino
+    // hasta la siguiente, así no dependen de dónde quede la meta.
+    // Acantilados: [desde, hasta, lado] (L izquierda, R derecha, B ambos = puente)
+    cliffs: [[0, 1, 'L'], [6, 7, 'R'], [9, 10, 'L'], [13, 14, 'L'], [18, 19, 'B'], [32, 33, 'B']],
+    // Aceite: [esquina, fracción, lado (-1 izquierda .. 1 derecha)]
+    oil: [[1, 0.5, 0.3], [5, 0.5, -0.3], [8, 0.3, 0.3], [12, 0.5, -0.35], [17, 0.5, 0.3], [23, 0.5, 0.3], [30, 0.5, -0.3]],
+    // Barro: [esquina, fracción, lado, largo en px]
+    mud: [[3, 0.5, 0, 90], [14, 0.5, 0.4, 70], [21, 0.5, -0.4, 80], [34, 0.5, 0, 70]],
+    // Bloques que van de lado a lado: [esquina, fracción, periodo en ms]
+    pistons: [[35, 0.5, 2600], [8, 0.6, 2200], [10, 0.5, 2400], [16, 0.5, 2000], [26, 0.5, 2300], [28, 0.5, 2100]],
   },
 ];
 
@@ -120,14 +134,45 @@ function crPoint(p0, p1, p2, p3, t) {
   return lerp(b1, b2, t1, t2);
 }
 
-function buildTrack(def) {
-  const P = def.points, n = P.length;
-
-  // 1) Spline densa
-  const dense = [];
+// Trazado con rectas y curvas circulares de verdad: cada esquina [x, y, radio]
+// se redondea con un arco tangente a los dos tramos (como un circuito real).
+// Dos esquinas de 90° separadas 2·radio forman una horquilla semicircular.
+function filletPath(C) {
+  const n = C.length, out = [];
   for (let i = 0; i < n; i++) {
-    const p0 = P[(i - 1 + n) % n], p1 = P[i], p2 = P[(i + 1) % n], p3 = P[(i + 2) % n];
-    for (let s = 0; s < 60; s++) dense.push(crPoint(p0, p1, p2, p3, s / 60));
+    const [px, py] = C[(i - 1 + n) % n], [cx, cy, r] = C[i], [qx, qy] = C[(i + 1) % n];
+    const l1 = Math.hypot(cx - px, cy - py), l2 = Math.hypot(qx - cx, qy - cy);
+    const u1 = [(cx - px) / l1, (cy - py) / l1], u2 = [(qx - cx) / l2, (qy - cy) / l2];
+    const cross = u1[0] * u2[1] - u1[1] * u2[0];
+    const phi = Math.acos(Math.max(-1, Math.min(1, u1[0] * u2[0] + u1[1] * u2[1])));   // ángulo de giro
+    if (phi < 1e-3 || !r) { out.push([cx, cy]); continue; }
+    const tan = Math.min(r * Math.tan(phi / 2), l1 / 2, l2 / 2);                     // de la esquina al inicio del arco
+    const rad = tan / Math.tan(phi / 2);
+    const ax = cx - u1[0] * tan, ay = cy - u1[1] * tan;
+    const s = cross > 0 ? 1 : -1;                                                     // 1 = gira a la derecha
+    const ox = ax - u1[1] * rad * s, oy = ay + u1[0] * rad * s;                      // centro del arco
+    const a0 = Math.atan2(ay - oy, ax - ox);
+    const steps = Math.max(2, Math.ceil(phi * rad / 4));
+    for (let k = 0; k <= steps; k++) {
+      const a = a0 + s * phi * k / steps;
+      out.push([ox + Math.cos(a) * rad, oy + Math.sin(a) * rad]);
+    }
+  }
+  return out;
+}
+
+function buildTrack(def) {
+  const P = def.corners ? def.corners.map(([x, y]) => [x, y]) : def.points, n = P.length;
+
+  // 1) Trazado denso: rectas + arcos (corners) o spline suave (points)
+  let dense = [];
+  if (def.corners) {
+    dense = filletPath(def.corners);
+  } else {
+    for (let i = 0; i < n; i++) {
+      const p0 = P[(i - 1 + n) % n], p1 = P[i], p2 = P[(i + 1) % n], p3 = P[(i + 2) % n];
+      for (let s = 0; s < 60; s++) dense.push(crPoint(p0, p1, p2, p3, s / 60));
+    }
   }
   dense.push(dense[0]);
 

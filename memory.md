@@ -90,11 +90,17 @@ Pruebas: servidor con 4 clientes simulados (todas las reglas) y dos navegadores 
 
 Petición: "demasiado difícil, no imposible pero que sea realmente un desafío con muchas curvas, acantilados y trampas en la pista".
 
-- Trazado ajustado con scripts hasta que la curva más cerrada (47 px) quedase por encima del giro mínimo del coche (~42 px a baja velocidad: `2.5 / PHYS.turn`). El primer diseño tenía curvas de 35 px: imposibles.
+- Primera versión con `points` (spline): curvas de 35 px (imposibles), luego ajustadas a 47 px. **El usuario pidió después curvas "más circulares, las hiciste poco reales"**: se rehízo con `corners` (rectas + arcos, `filletPath`), horquillas semicirculares de radio 120. Ahora: 23 curvas (18 cerradas), 15,2 km, radio mínimo 120 (> giro mínimo ~42 px = `2.5 / PHYS.turn`).
 - La separación mínima entre tramos (217 px) cumple de sobra; para que exista muro entre dos tramos basta con > 2·(half + RUNOFF − 7,8) ≈ 168 px.
 - Trampas elegidas por Claude: acantilados (caída = reaparecer 14 muestras atrás parado), aceite, barro y bloques móviles deterministas por tiempo de carrera. Ninguna en la parrilla ni junto a la salida.
-- Simulación (`sim2.js` en el scratchpad): 4 vueltas OK; ritmo prudente ~255 s sin caídas, ritmo máximo ~188 s con ~8 caídas.
+- Simulación (`sim2.js` en el scratchpad): 4 vueltas OK; ritmo prudente ~318 s sin caídas, ritmo máximo ~217 s con ~6 caídas. Es una carrera larga (5 min): si el usuario se queja, acortar el trazado.
 - El tema es morado (`out: '#221536'`) para que el vacío negro de los acantilados contraste; con el fondo casi negro no se distinguía.
+
+## Semáforo, turbo y música (2026-09-28)
+
+- Semáforo de 5 s en la salida (pedido por el usuario): `COUNTDOWN_MS = 5000`, 1 luz roja por segundo, verde al salir.
+- Turbo para el último "hasta que alcance a los demás": interpretado como alcanzar al coche que tiene justo delante (se activa a > 25 muestras = 200 px, se apaga a < 8). Solo en carreras.
+- **Música:** el usuario pidió "My Own Summer" de Deftones en versión 8 bits. **No se hizo**: una versión 8 bits reproduce la melodía/riff con derechos de autor y además se publicaría en Vercel. En su lugar: chiptune **original** de estilo metal (Web Audio) + opción de poner un `public/music.mp3` propio (con permiso). Si vuelve a pedirlo, mantener la negativa y ofrecer el archivo propio.
 
 ## Cuentas usadas
 

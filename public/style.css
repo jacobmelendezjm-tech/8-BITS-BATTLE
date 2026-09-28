@@ -314,6 +314,12 @@ body.fill .gamebar {
 body.fill #gameInfo { display: none; }
 body.touch .gamebar button { font-size: 8px; padding: 8px 10px; }
 
+/* Botón de música */
+.btn-music { font-size: 10px; }
+.btn-music span[aria-hidden] { font-family: 'Segoe UI Symbol', Arial, sans-serif; font-size: 14px; }
+.btn-music.off { background: #5f574f; box-shadow: inset -4px -4px 0 #000, 4px 4px 0 #000; }
+body.touch .btn-music .mlabel { display: none; }
+
 /* Botón de pantalla completa */
 .btn-fs { display: inline-flex; align-items: center; gap: 8px; }
 .btn-fs svg { width: 14px; height: 14px; flex: none; }

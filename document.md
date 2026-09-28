@@ -47,7 +47,17 @@ La dificultad sube con el número de curvas, lo cerradas que son y el ancho de l
 
 `buildTrack` coloca la línea de meta (muestra 0) en el tramo más recto de la pista: busca la ventana de 75 muestras antes y 25 después con menos giro acumulado. Así la parrilla (hasta 12 coches, ~60 muestras detrás de la meta) y el arranque quedan en recta, sea cual sea el primer punto de control.
 
-### 4.2 Peligros de pista (DEMENCIA)
+### 4.2 Trazados con curvas circulares (`corners`)
+
+Además de `points` (spline Catmull-Rom, curvas suaves pero con el radio variando), una pista puede definirse con `corners: [[x, y, radio], ...]`. `filletPath` une las esquinas con rectas y redondea cada una con un arco de circunferencia tangente a los dos tramos (radio constante). Dos esquinas de 90° separadas 2·radio forman una horquilla semicircular. DEMENCIA usa este sistema; con `points` sus horquillas quedaban en pico (35-47 px en el vértice y casi rectas al lado), poco realistas.
+
+### 4.3 Salida, turbo y música
+
+- **Semáforo:** `COUNTDOWN_MS = 5000` en el servidor; el cliente enciende `lightsOn()` = 1..5 luces rojas según `snap.left` y las pone verdes al pasar a `playing` (`drawTrafficLight`).
+- **Turbo del último** (`updateTurbo`, solo carreras): si mi coche es el último y va más de `TURBO.on` muestras por detrás del de delante, `car.turbo` multiplica la velocidad punta (×1,3) y la aceleración (×1,5) en `stepCar`; se apaga a menos de `TURBO.off` muestras o al dejar de ser último. Se revisa en cada frame, también durante una caída. Se envía `tb` para que los demás vean las llamas.
+- **Música** (`music` en `client.js`): chiptune original programado con Web Audio (secuenciador de semicorcheas con anticipación de 120 ms: bajo con quinta, melodía, bombo, caja y charles). Si el servidor tiene `public/music.mp3`, se reproduce ese archivo en bucle en su lugar (el servidor devuelve 404 si no existe). Se guarda en `localStorage` si está activada.
+
+### 4.4 Peligros de pista (DEMENCIA)
 
 Una pista puede definir `cliffs`, `oil`, `mud` y `pistons`. Se colocan con el índice de un punto de control y la fracción del camino hasta el siguiente, así no dependen de dónde caiga la meta. `buildTrack` los convierte en: `cliff` (por muestra: 0, -1 izquierda, 1 derecha, 2 ambos lados), y listas `oil`, `mud`, `pistons` con su posición.
 

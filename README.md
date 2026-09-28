@@ -22,18 +22,23 @@ La primera vez, Windows pedirá permiso en el firewall para Node.js: marca **Red
 | VALLE VERDE | Normal | 6 | 0 | Amplio |
 | COSTA SERPIENTE | Difícil | 11 | 6 | Medio |
 | INFIERNO | Extrema | 17 | 11 | Estrecho |
-| DEMENCIA | Demencial ★★★★ | 18 | 17 | Mínimo |
+| DEMENCIA | Demencial ★★★★ | 23 | 18 | Mínimo |
 
 Salirse del asfalto (hierba/tierra) frena mucho, y el muro de neumáticos te devuelve a la pista.
 
 ### DEMENCIA: acantilados y trampas
-La pista más difícil: la más estrecha, con el doble de horquillas que INFIERNO y además:
+La pista más difícil: la más estrecha, con rectas y **curvas circulares de verdad** (las horquillas son semicírculos, como en un circuito real), peines de horquillas y eses, y además:
 - **Acantilados** (6 zonas, 2 de ellas puentes con vacío a ambos lados): si te sales del piano por ese lado caes al vacío y reapareces un poco más atrás, parado (pierdes varios segundos).
 - **Manchas de aceite** (7): trompo y casi sin agarre ni volante durante un momento.
 - **Charcos de barro** (4): frenan como la hierba.
 - **Bloques móviles** amarillos y negros (6) que cruzan la pista de lado a lado y te empujan. Siempre queda hueco para pasar.
 
-Comprobado con simulación: se puede terminar (unos 4 min a ritmo prudente sin caerse; a tope se cae varias veces).
+Comprobado con simulación: se puede terminar (unos 5 min a ritmo prudente sin caerse; unos 3 min y medio a tope, cayéndose varias veces).
+
+## Salida, turbo y música
+- **Semáforo de 5 segundos** en la salida (carreras y arena): se enciende una luz roja por segundo y al quinto se ponen todas en verde: ¡YA!
+- **Turbo para el último** (solo carreras): si vas último y muy por detrás del coche que tienes delante, tienes turbo (más velocidad punta y aceleración, con llamas) hasta que lo alcanzas. Si te vuelves a quedar atrás, vuelve.
+- **Música de fondo**: un chiptune original de estilo metal. Se quita con el botón ♪ / **MÚSICA** o la tecla **N** (la **M** silencia todo). Para usar otra música, pon un archivo `public/music.mp3` (solo música que tengas permiso para usar: se publica en internet con el juego).
 
 ## Modo demolición (ARENA DEL CAOS)
 Se elige como una pista más (la tarjeta rosa de la sala). Arena ovalada cerrada con 4 pilares de neumáticos. En la arena los coches son un 50% más grandes que en las carreras, para que sea más fácil golpearse.
@@ -46,7 +51,7 @@ Se elige como una pista más (la tarjeta rosa de la sala). Arena ovalada cerrada
 - Gana el **último en pie**. Si pasan **3 minutos**, gana quien tenga más vida.
 
 ## Controles
-- **Ordenador:** **W** o **↑** acelerar · **S** o **↓** frenar / marcha atrás · **A** o **←** girar a la izquierda · **D** o **→** girar a la derecha · **M** sonido · **F** pantalla completa
+- **Ordenador:** **W** o **↑** acelerar · **S** o **↓** frenar / marcha atrás · **A** o **←** girar a la izquierda · **D** o **→** girar a la derecha · **M** sonido · **N** música · **F** pantalla completa
 - **Móvil / tablet:** la carrera ocupa toda la pantalla (mejor en horizontal, también funciona en vertical). Flechas **←** y **→** estilo PlayStation abajo a la izquierda para girar (se puede deslizar el pulgar de una a otra) · botón **A** acelerar · botón **B** frenar / marcha atrás. Se puede girar y acelerar a la vez, con dos dedos.
 
 ## Pantalla completa
@@ -56,6 +61,7 @@ Se elige como una pista más (la tarjeta rosa de la sala). Arena ovalada cerrada
 - En iPhone no existe para páginas web (el botón no aparece): usa **Compartir → Añadir a pantalla de inicio** y abre el juego desde ese icono.
 
 ## Ajustes
-- `server.js`: `LAPS` (vueltas), `HOST_PICK_MAX` (hasta cuántos pilotos elige el host), `VOTE_MS`, `FINISH_TIMEOUT`, `PORT`.
-- `public/tracks.js`: los puntos de cada pista, su ancho, colores y la física del coche (`PHYS`). Una pista puede tener `cliffs`, `oil`, `mud` y `pistons` (ver DEMENCIA).
+- `server.js`: `COUNTDOWN_MS` (semáforo, 5 s), `LAPS` (vueltas), `HOST_PICK_MAX` (hasta cuántos pilotos elige el host), `VOTE_MS`, `FINISH_TIMEOUT`, `PORT`.
+- `public/tracks.js`: los puntos de cada pista, su ancho, colores y la física del coche (`PHYS`). Una pista puede tener `cliffs`, `oil`, `mud` y `pistons` (ver DEMENCIA), y definirse con `points` (curva suave) o con `corners` `[x, y, radio]` (rectas + arcos circulares).
+- `public/client.js`: `TURBO` (cuánto más rápido va el último y a qué distancia se activa/desactiva) y la música (`BASS`, `LEAD`, `SONG`, `tempo`).
 - `public/tracks.js` → `DERBY`: reglas del modo demolición (vida, daño de cada golpe y velocidad a partir de la que es fuerte, botiquines, escudos, tiempo límite, tamaño de los coches en la arena `CAR_SCALE`). `ARENAS`: forma de la arena y sus pilares.

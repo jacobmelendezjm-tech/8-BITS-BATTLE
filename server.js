@@ -20,7 +20,7 @@ const TICK_MS = 1000 / 30;          // 30 actualizaciones por segundo
 const LAPS = 4;
 const HOST_PICK_MAX = 2;            // hasta 2 jugadores elige el host; más, votación
 const VOTE_MS = 15000;              // duración de la votación
-const COUNTDOWN_MS = 4000;          // 1 s mostrando la pista + 3, 2, 1
+const COUNTDOWN_MS = 5000;          // semáforo: una luz roja por segundo; al quinto, ¡verde!
 const FINISH_TIMEOUT = 45000;       // tras el primero en llegar, el resto tiene 45 s
 const END_SCREEN_MS = 12000;
 const NAME_MAX = 12;
@@ -295,7 +295,7 @@ function snapshot() {
     p: [...players.values()].filter(p => p.joined).map(p => ({
       id: p.id, n: p.name, c: p.color, h: p.isHost, ig: p.inGame, v: !!p.vote,
       ...(p.inGame ? {
-        g: p.grid, x: p.x, y: p.y, a: p.a, pg: p.pg, lp: p.lp, fl: p.fl ? 1 : 0,
+        g: p.grid, x: p.x, y: p.y, a: p.a, pg: p.pg, lp: p.lp, fl: p.fl ? 1 : 0, tb: p.tb ? 1 : 0,
         fin: p.finished, ft: p.finishTime, pl: p.place,
         ...(mode === 'derby' ? {
           hp: p.hp, al: p.alive, ko: p.kills, kt: p.koTime,
@@ -320,13 +320,14 @@ const STATIC = {
   '/client.js': ['client.js', 'text/javascript; charset=utf-8'],
   '/tracks.js': ['tracks.js', 'text/javascript; charset=utf-8'],
   '/style.css': ['style.css', 'text/css; charset=utf-8'],
+  '/music.mp3': ['music.mp3', 'audio/mpeg'],          // opcional: música propia (si existe)
 };
 
 const server = http.createServer((req, res) => {
   const file = STATIC[req.url.split('?')[0]];
   if (!file) { res.writeHead(404); return res.end('No encontrado'); }
   fs.readFile(path.join(__dirname, 'public', file[0]), (err, data) => {
-    if (err) { res.writeHead(500); return res.end('Error'); }
+    if (err) { res.writeHead(err.code === 'ENOENT' ? 404 : 500); return res.end(err.code === 'ENOENT' ? 'No encontrado' : 'Error'); }
     res.writeHead(200, { 'Content-Type': file[1], 'Cache-Control': 'no-cache' });
     res.end(data);
   });
@@ -387,6 +388,7 @@ wss.on('connection', (ws, req) => {
         p.a = Math.round(num(m.a) * 100) / 100;
         p.pg = Math.round(num(m.pg));
         p.fl = !!m.fl;                                  // cayendo por un acantilado
+        p.tb = !!m.tb;                                  // con turbo (va último)
         if (!p.finished) p.lp = Math.max(0, Math.min(LAPS, Math.floor(num(m.lp))));
         if (typeof m.best === 'number' && m.best > 0) p.best = Math.round(m.best);
         break;
