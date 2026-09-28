@@ -70,6 +70,32 @@ const TRACKS = [
       [620, 1650], [300, 1330], [660, 1010], [300, 700],
     ],
   },
+  {
+    id: 'demencia',
+    name: 'DEMENCIA',
+    diff: 'DEMENCIAL',
+    color: '#c02cff',
+    width: 100,
+    theme: { out: '#221536', runoff: '#3b2a4a', asphalt: '#3d3a48', deco: ['#7e2553', '#83769c', '#ff004d'] },
+    points: [
+      [600, 300], [1500, 300], [1850, 420], [1780, 760], [1450, 820],
+      [1350, 1100], [1700, 1250], [2050, 1050], [2150, 650], [2450, 350],
+      [2850, 420], [3000, 800], [2700, 1000], [2900, 1300], [2650, 1600],
+      [3000, 1900], [2750, 2250], [2200, 2150], [2350, 1800], [1950, 1650],
+      [1700, 1950], [1350, 1750], [1050, 2050], [740, 2070], [560, 1900],
+      [900, 1680], [420, 1330], [950, 980], [420, 650],
+    ],
+    // Peligros. Se colocan con el índice del punto de control y la fracción
+    // del camino hasta el siguiente, así no dependen de dónde quede la meta.
+    // Acantilados: [desde punto, hasta punto, lado] (L izquierda, R derecha, B ambos)
+    cliffs: [[0, 1, 'L'], [3, 5, 'R'], [9, 11, 'L'], [15, 17, 'L'], [22, 23, 'B'], [26, 27, 'B']],
+    // Aceite: [punto, fracción, lado (-1 izquierda .. 1 derecha)]
+    oil: [[1, 0.5, 0.3], [7, 0.5, -0.4], [10, 0.5, 0.35], [13, 0.4, -0.3], [18, 0.5, 0.3], [21, 0.5, -0.35], [25, 0.5, 0.3]],
+    // Barro: [punto, fracción, lado, largo en px]
+    mud: [[5, 0.5, 0, 90], [14, 0.5, 0.4, 70], [19, 0.5, -0.4, 80], [22, 0.5, 0, 70]],
+    // Bloques que van de lado a lado: [punto, fracción, periodo en ms]
+    pistons: [[0, 0.15, 2600], [8, 0.5, 2200], [11, 0.5, 2400], [16, 0.5, 2000], [20, 0.5, 2300], [27, 0.5, 2100]],
+  },
 ];
 
 // ---------- Geometría ----------
@@ -198,12 +224,58 @@ function buildTrack(def) {
     minY = Math.min(minY, ys[i]); maxY = Math.max(maxY, ys[i]);
   }
 
+  // 7) Peligros (solo algunas pistas): acantilados y trampas
+  const half = def.width / 2;
+  const nearest = (x, y) => {
+    let b = 0, bd = Infinity;
+    for (let i = 0; i < N; i++) {
+      const d = (xs[i] - x) ** 2 + (ys[i] - y) ** 2;
+      if (d < bd) { bd = d; b = i; }
+    }
+    return b;
+  };
+  const ptIdx = P.map(([x, y]) => nearest(x, y));
+  const along = (a, frac) => {                 // muestra a "frac" del camino entre el punto a y el siguiente
+    const s0 = ptIdx[a % n], len = (ptIdx[(a + 1) % n] - s0 + N) % N;
+    return (s0 + Math.round(len * frac)) % N;
+  };
+  const cliff = new Int8Array(N);              // 0 nada, -1 izquierda, 1 derecha, 2 ambos lados
+  for (const [a, b, side] of def.cliffs || []) {
+    const s0 = ptIdx[a % n], len = (ptIdx[b % n] - s0 + N) % N;
+    const v = side === 'L' ? -1 : side === 'R' ? 1 : 2;
+    for (let k = 0; k <= len; k++) {
+      const i = (s0 + k) % N;
+      cliff[i] = cliff[i] && cliff[i] !== v ? 2 : v;
+    }
+  }
+  const spot = (a, frac, lat) => {
+    const i = along(a, frac);
+    return { idx: i, x: xs[i] + nx[i] * lat * half, y: ys[i] + ny[i] * lat * half, ang: dir[i] };
+  };
+  const oil = (def.oil || []).map(([a, fr, lat]) => ({ ...spot(a, fr, lat), r: 24 }));
+  const mud = (def.mud || []).map(([a, fr, lat, len]) => ({ ...spot(a, fr, lat), rx: len / 2, ry: half * 0.55 }));
+  const pistons = (def.pistons || []).map(([a, fr, period]) => {
+    const i = along(a, fr);
+    return { idx: i, x: xs[i], y: ys[i], nx: nx[i], ny: ny[i], ang: dir[i], range: half - 26, period, r: 24, phase: i * 0.37 };
+  });
+
   let length = N * SAMPLE_DS;
   return {
     def, N, xs, ys, dir, nx, ny, curv, speed, curves, hairpins, length,
-    half: def.width / 2,
+    half,
     bounds: { minX, minY, maxX, maxY },
+    cliff, oil, mud, pistons,
+    cliffZones: (def.cliffs || []).length,
+    traps: oil.length + mud.length + pistons.length,
   };
+}
+
+// Posición de un bloque móvil en el instante T (ms de carrera): va de lado a
+// lado de la pista. Devuelve también su velocidad (px por frame a 60 fps).
+function pistonPos(p, T) {
+  const w = 2 * Math.PI / p.period, a = w * T + p.phase;
+  const off = Math.sin(a) * p.range, vel = Math.cos(a) * p.range * w * (1000 / 60);
+  return { x: p.x + p.nx * off, y: p.y + p.ny * off, vx: p.nx * vel, vy: p.ny * vel };
 }
 
 // Muestra más cercana a (x, y) buscando solo alrededor de la anterior,
@@ -331,7 +403,7 @@ function arenaInside(a, x, y, margin) {
 
 if (typeof module !== 'undefined') {
   module.exports = {
-    TRACKS, PHYS, SAMPLE_DS, RUNOFF, buildTrack, locate, angDiff, turnRate,
+    TRACKS, PHYS, SAMPLE_DS, RUNOFF, buildTrack, locate, angDiff, turnRate, pistonPos,
     DERBY, ARENAS, arenaBounds, arenaSpawn, arenaCollide, arenaInside,
   };
 }

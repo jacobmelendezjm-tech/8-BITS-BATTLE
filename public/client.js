@@ -20,6 +20,7 @@ const CAR_R = 13;                  // radio de choque entre coches (en la arena,
 const carScale = () => (race && race.mode === 'derby' ? DERBY.CAR_SCALE : 1);
 const carR = () => CAR_R * carScale();
 const CURB = 10;                   // ancho del piano rojo/blanco
+const FALL_FRAMES = 70;            // lo que dura la caída por un acantilado (~1,2 s)
 
 // En móviles/tablets el juego ocupa toda la pantalla y se maneja con flechas y botones táctiles
 const IS_TOUCH = matchMedia('(pointer: coarse)').matches;
@@ -341,6 +342,7 @@ function renderTrack(t, gridCount) {
     }
   }
   stroke(3, 'rgba(255,241,232,.45)', [26, 26]);
+  if (t.cliff) drawTrackHazards(c, t, ox, oy, r);
 
   // Decoración fuera de la pista (árboles / rocas), lejos del muro
   const minD = W / 2 + RUNOFF + 40;
@@ -380,6 +382,61 @@ function renderTrack(t, gridCount) {
   }
 
   return { canvas: cv, ctx: c, ox, oy, w, h };
+}
+
+// Acantilados (vacío con borde de roca), manchas de aceite, barro y raíles de los bloques
+function drawTrackHazards(c, t, ox, oy, r) {
+  const inner = t.half + CURB, outer = t.half + RUNOFF + 18;
+  const edge = (i, side, d) => [t.xs[i] + t.nx[i] * side * d - ox, t.ys[i] + t.ny[i] * side * d - oy];
+  for (let i = 0; i < t.N; i++) {
+    const cv = t.cliff[i];
+    if (!cv) continue;
+    const j = (i + 1) % t.N;
+    for (const side of cv === 2 ? [-1, 1] : [cv]) {
+      const a = edge(i, side, inner), b = edge(j, side, inner), cc = edge(j, side, outer), d = edge(i, side, outer);
+      c.fillStyle = '#000';
+      c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.lineTo(cc[0], cc[1]); c.lineTo(d[0], d[1]); c.closePath(); c.fill();
+      // Borde de roca claro (para que el precipicio se vea bien) y piedras cayendo al fondo
+      const rim = edge(i, side, inner + 3), rim2 = edge(i, side, inner + 10);
+      c.fillStyle = i % 2 ? '#c2c3c7' : '#83769c';
+      c.fillRect(Math.round(rim[0]) - 4, Math.round(rim[1]) - 4, 8, 8);
+      c.fillStyle = '#5f574f';
+      c.fillRect(Math.round(rim2[0]) - 3, Math.round(rim2[1]) - 3, 6, 6);
+      if (r() < 0.3) {
+        const m = edge(i, side, inner + 16 + r() * (outer - inner - 20));
+        c.fillStyle = r() < 0.5 ? 'rgba(131,118,156,.5)' : 'rgba(126,37,83,.6)';
+        c.fillRect(Math.round(m[0]), Math.round(m[1]), 3, 3);
+      }
+    }
+  }
+  for (const o of t.oil) {
+    const x = o.x - ox, y = o.y - oy;
+    c.fillStyle = '#0b0b10';
+    for (const [dx, dy, rr] of [[0, 0, o.r], [-10, 6, o.r * 0.6], [12, -5, o.r * 0.55]]) {
+      c.beginPath(); c.arc(x + dx, y + dy, rr, 0, Math.PI * 2); c.fill();
+    }
+    c.strokeStyle = 'rgba(41,173,255,.45)'; c.lineWidth = 3;
+    c.beginPath(); c.arc(x - 4, y - 4, o.r * 0.55, 3.6, 5.2); c.stroke();
+    c.strokeStyle = 'rgba(255,119,168,.35)';
+    c.beginPath(); c.arc(x + 3, y + 2, o.r * 0.7, 0.2, 1.4); c.stroke();
+  }
+  for (const m of t.mud) {
+    c.save();
+    c.translate(m.x - ox, m.y - oy);
+    c.rotate(m.ang);
+    c.fillStyle = '#5a3b1e';
+    c.beginPath(); c.ellipse(0, 0, m.rx, m.ry, 0, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#3e2812';
+    for (let k = 0; k < 14; k++) c.fillRect(Math.round((r() - 0.5) * m.rx * 1.4), Math.round((r() - 0.5) * m.ry * 1.2), 5, 4);
+    c.restore();
+  }
+  for (const p of t.pistons) {
+    const a = edge(p.idx, -1, t.half + 4), b = edge(p.idx, 1, t.half + 4);
+    c.strokeStyle = '#16161a'; c.lineWidth = 14; c.setLineDash([]);
+    c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke();
+    c.fillStyle = '#ffec27';
+    for (const e of [a, b]) c.fillRect(Math.round(e[0]) - 6, Math.round(e[1]) - 6, 12, 12);
+  }
 }
 
 function drawCheckers(c, t, ox, oy) {
@@ -599,7 +656,13 @@ function reportHit(o, ram) {
 function stepCar(car, ctl) {
   // 1) Girar (más lento a baja y a muy alta velocidad)
   const dirSign = car.fwd >= 0 ? 1 : -1;
-  car.angle += ctl.steer * turnRate(car.fwd) * dirSign;
+  const grip = car.oil > 0 ? 0.35 : 1;               // en aceite el volante casi no responde
+  car.angle += ctl.steer * turnRate(car.fwd) * dirSign * grip;
+  if (car.spin) {                                    // trompo al pisar aceite
+    car.angle += car.spin;
+    car.spin *= 0.93;
+    if (Math.abs(car.spin) < 0.002) car.spin = 0;
+  }
 
   // 2) Descomponer la velocidad respecto al nuevo rumbo (así aparece el derrape)
   const fx = Math.cos(car.angle), fy = Math.sin(car.angle);
@@ -616,7 +679,8 @@ function stepCar(car, ctl) {
   f *= grass ? 0.975 : car.surface === 1 ? 0.994 : 0.997;
   f = Math.max(-PHYS.reverseMax, Math.min(PHYS.maxSpeed, f));
   if (grass && f > PHYS.grassMax) f = Math.max(PHYS.grassMax, f * 0.94);
-  l *= grass ? 0.9 : 0.8;
+  l *= car.oil > 0 ? 0.985 : grass ? 0.9 : 0.8;    // en aceite el coche resbala
+  if (car.oil > 0) car.oil--;
 
   car.vx = f * fx - l * fy;
   car.vy = f * fy + l * fx;
@@ -657,6 +721,89 @@ function updateTrackPos(car, t) {
   // Sentido contrario
   const along = Math.cos(car.angle - t.dir[car.idx]);
   car.wrongWay = along < -0.4 && Math.abs(car.fwd) > 1 ? car.wrongWay + 1 : 0;
+}
+
+// ---------- Peligros de la pista (DEMENCIA) ----------
+const raceTimeMs = () => (race && race.state === 'racing' ? race.raceFrame * STEP_MS : 0);
+
+function trackHazards(car, t, T) {
+  if (!t.cliff) return;
+  // Acantilado: salirse del piano por ese lado = caída al vacío
+  const i = car.idx, c = t.cliff[i];
+  if (c) {
+    const lat = (car.x - t.xs[i]) * t.nx[i] + (car.y - t.ys[i]) * t.ny[i];
+    if (Math.abs(lat) > t.half + CURB + 2 && (c === 2 || Math.sign(lat) === c)) { startFall(car); return; }
+  }
+  // Aceite: trompo y casi sin agarre durante un momento
+  for (const o of t.oil) {
+    if (Math.hypot(car.x - o.x, car.y - o.y) > o.r + 8) continue;
+    if (!car.oil) {
+      car.spin = (Math.random() < 0.5 ? -1 : 1) * 0.05 * Math.min(1, Math.abs(car.fwd) / 4);
+      sound.beep(260, 0.25, 'sine', 0.1);
+    }
+    car.oil = 40;
+  }
+  // Barro: frena como la hierba
+  for (const m of t.mud) {
+    const dx = car.x - m.x, dy = car.y - m.y, ca = Math.cos(m.ang), sa = Math.sin(m.ang);
+    const u = dx * ca + dy * sa, v = -dx * sa + dy * ca;
+    if ((u / m.rx) ** 2 + (v / m.ry) ** 2 < 1) car.surface = 2;
+  }
+  // Bloques que van de lado a lado: te empujan
+  for (const p of t.pistons) {
+    const q = pistonPos(p, T);
+    const dx = car.x - q.x, dy = car.y - q.y, d = Math.hypot(dx, dy), min = p.r + CAR_R;
+    if (d >= min || d === 0) continue;
+    const nx = dx / d, ny = dy / d;
+    car.x = q.x + nx * min;
+    car.y = q.y + ny * min;
+    const vn = (car.vx - q.vx) * nx + (car.vy - q.vy) * ny;
+    if (vn < 0) { car.vx -= 1.8 * vn * nx; car.vy -= 1.8 * vn * ny; }
+    if (car.bumpCd <= 0) { sound.bump(); shake = Math.max(shake, 6); car.bumpCd = 20; }
+  }
+}
+
+function startFall(car) {
+  car.falling = FALL_FRAMES;
+  car.fallIdx = car.idx;
+  banner('¡AL VACÍO!', '#ff004d', 80);
+  shake = Math.max(shake, 5);
+  [600, 420, 260, 140].forEach((fq, k) => setTimeout(() => sound.beep(fq, 0.18, 'square', 0.1), k * 140));
+}
+
+// Durante la caída no se controla el coche; al terminar reaparece un poco más atrás, parado
+function updateFall(car, t) {
+  car.falling--;
+  car.x += car.vx * 0.5;
+  car.y += car.vy * 0.5;
+  car.vx *= 0.9; car.vy *= 0.9;
+  car.angle += 0.08;
+  if (car.falling > 0) return;
+  const i = (car.fallIdx - 14 + t.N) % t.N;
+  let delta = i - car.idx;
+  if (delta > t.N / 2) delta -= t.N;
+  if (delta < -t.N / 2) delta += t.N;
+  car.progress += delta;
+  car.idx = i;
+  Object.assign(car, { x: t.xs[i], y: t.ys[i], angle: t.dir[i], vx: 0, vy: 0, fwd: 0, lat: 0, oil: 0, spin: 0, surface: 0 });
+}
+
+function drawPiston(q, ang) {
+  ctx.save();
+  ctx.translate(Math.round(q.x), Math.round(q.y));
+  ctx.rotate(ang);
+  ctx.fillStyle = 'rgba(0,0,0,.4)';
+  ctx.fillRect(-18, -18, 42, 42);
+  ctx.fillStyle = '#ffec27';
+  ctx.fillRect(-22, -22, 44, 44);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(-22, -22, 44, 44); ctx.clip();
+  ctx.strokeStyle = '#000'; ctx.lineWidth = 7;
+  for (let k = -44; k <= 44; k += 16) { ctx.beginPath(); ctx.moveTo(k - 22, 22); ctx.lineTo(k + 22, -22); ctx.stroke(); }
+  ctx.restore();
+  ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
+  ctx.strokeRect(-22, -22, 44, 44);
+  ctx.restore();
 }
 
 // Piloto automático tras cruzar la meta: sigue la pista despacio
@@ -787,11 +934,14 @@ function update() {
     collideRemote(car, r.remotes.values(), true);
     arenaWalls(car, t);
     addSkid(car);
+  } else if (car && r.state === 'racing' && car.falling) {
+    updateFall(car, t);
   } else if (car && r.state === 'racing') {
     const ctl = car.finished ? autopilot(car, t) : playerControl();
     stepCar(car, ctl);
     collideRemote(car, r.remotes.values());
     updateTrackPos(car, t);
+    trackHazards(car, t, raceTimeMs());
     checkLap(car);
     addSkid(car);
   }
@@ -847,7 +997,7 @@ function update() {
   // Enviar mi posición (30 veces por segundo)
   if (car && r.frame % 2 === 0 && (snap.ph === 'countdown' || snap.ph === 'playing')) {
     send({
-      t: 'st', rid: r.rid, x: car.x, y: car.y, a: car.angle,
+      t: 'st', rid: r.rid, x: car.x, y: car.y, a: car.angle, fl: car.falling ? 1 : 0,
       pg: car.progress, lp: car.lapsDone,
       best: car.bestLap != null ? car.bestLap * STEP_MS : null,
     });
@@ -902,7 +1052,12 @@ function drawCar(c, car) {
   c.save();
   c.translate(Math.round(car.x), Math.round(car.y));
   c.rotate(car.angle);
-  const k = carScale();
+  let k = carScale();
+  if (car.falling || car.fl) {                // cayendo por un acantilado: se encoge y se oscurece
+    const f = car.falling ? Math.max(0.15, car.falling / FALL_FRAMES) : 0.5;
+    k *= f;
+    c.globalAlpha = Math.max(0.25, f);
+  }
   if (k !== 1) c.scale(k, k);                 // arena: coches más grandes
   c.fillStyle = 'rgba(0,0,0,.35)';            // sombra
   c.fillRect(-16, -8, 34, 20);
@@ -963,6 +1118,7 @@ function draw() {
   ctx.save();
   ctx.translate(-cx - g.ox, -cy - g.oy);
   if (r.mode === 'derby') drawPickups(r);
+  if (r.t.pistons) for (const p of r.t.pistons) drawPiston(pistonPos(p, raceTimeMs()), p.ang);
   for (const o of r.remotes.values()) drawCar(ctx, o);
   if (r.car) drawCar(ctx, r.car);                // el mío encima
   if (r.mode === 'derby') {
@@ -1347,7 +1503,8 @@ function buildCards() {
       <canvas width="260" height="170"></canvas>
       <span class="tname">${t.def.name}</span>
       <span class="stat">CURVAS: <b>${t.curves}</b> · CERRADAS: <b>${t.hairpins}</b></span>
-      <span class="stat">LONGITUD: <b>${(t.length / 1000).toFixed(1)} KM</b> · ANCHO: <b>${t.def.width >= 160 ? 'AMPLIO' : t.def.width >= 135 ? 'MEDIO' : 'ESTRECHO'}</b></span>
+      <span class="stat">LONGITUD: <b>${(t.length / 1000).toFixed(1)} KM</b> · ANCHO: <b>${t.def.width >= 160 ? 'AMPLIO' : t.def.width >= 135 ? 'MEDIO' : t.def.width >= 110 ? 'ESTRECHO' : 'MÍNIMO'}</b></span>
+      ${t.cliffZones || t.traps ? `<span class="stat">ACANTILADOS: <b>${t.cliffZones}</b> · TRAMPAS: <b>${t.traps}</b></span>` : ''}
       <span class="stat record">TU RÉCORD: <b></b></span>
       <span class="votes" hidden></span>`;
     drawPreview(btn.querySelector('canvas'), t);
@@ -1510,6 +1667,7 @@ function onSnapshot(s) {
         o = { id: p.id, x: p.x, y: p.y, angle: p.a, color: p.c, dark: darken(p.c), name: p.n, vx: 0, vy: 0 };
         race.remotes.set(p.id, o);
       }
+      o.fl = !!p.fl;                                              // cayendo por un acantilado
       o.vx = (p.x - (o.tx ?? p.x)) / 2;
       o.vy = (p.y - (o.ty ?? p.y)) / 2;
       o.tx = p.x; o.ty = p.y; o.ta = p.a;

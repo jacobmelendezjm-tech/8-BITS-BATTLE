@@ -47,6 +47,17 @@ La dificultad sube con el número de curvas, lo cerradas que son y el ancho de l
 
 `buildTrack` coloca la línea de meta (muestra 0) en el tramo más recto de la pista: busca la ventana de 75 muestras antes y 25 después con menos giro acumulado. Así la parrilla (hasta 12 coches, ~60 muestras detrás de la meta) y el arranque quedan en recta, sea cual sea el primer punto de control.
 
+### 4.2 Peligros de pista (DEMENCIA)
+
+Una pista puede definir `cliffs`, `oil`, `mud` y `pistons`. Se colocan con el índice de un punto de control y la fracción del camino hasta el siguiente, así no dependen de dónde caiga la meta. `buildTrack` los convierte en: `cliff` (por muestra: 0, -1 izquierda, 1 derecha, 2 ambos lados), y listas `oil`, `mud`, `pistons` con su posición.
+
+- Todo se simula en el navegador de cada jugador (`trackHazards` en `client.js`), como el resto de la conducción; el servidor solo reenvía si un coche está cayendo (`fl`) para dibujarlo encogido en las otras pantallas.
+- **Acantilado:** si el coche pasa más de `half + CURB + 2` del centro por un lado con acantilado, cae (`startFall`): 70 frames sin control y reaparece 14 muestras más atrás, parado, restando ese tramo del progreso.
+- **Aceite:** `car.oil` 40 frames con el agarre lateral casi a cero y el volante al 35%, más un trompo (`car.spin`).
+- **Barro:** fuerza `surface = 2` (se comporta como hierba).
+- **Bloques:** `pistonPos(p, T)` (en `tracks.js`) da su posición según el tiempo de carrera, igual en todos los navegadores; chocan como un obstáculo circular que además empuja con su velocidad.
+- Se dibujan en el pre-render de la pista (`drawTrackHazards`), salvo los bloques, que se mueven y se dibujan en cada frame.
+
 ## 4b. Móviles y tablets
 
 - `client.js` detecta pantalla táctil con `matchMedia('(pointer: coarse)')` y añade la clase `touch` al `<body>`.

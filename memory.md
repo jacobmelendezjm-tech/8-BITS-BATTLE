@@ -86,6 +86,16 @@ Decisiones tomadas por Claude (no las pidió el usuario; revisar si pide cambios
 
 Pruebas: servidor con 4 clientes simulados (todas las reglas) y dos navegadores Chrome reales (uno de ordenador y uno de móvil emulado) chocando de frente. Con puppeteer hay que usar **un navegador por jugador**: una segunda pestaña en el mismo navegador queda en segundo plano, no dibuja y los clics/toques se cuelgan.
 
+## Pista DEMENCIA (añadida 2026-09-28, pedida por el usuario)
+
+Petición: "demasiado difícil, no imposible pero que sea realmente un desafío con muchas curvas, acantilados y trampas en la pista".
+
+- Trazado ajustado con scripts hasta que la curva más cerrada (47 px) quedase por encima del giro mínimo del coche (~42 px a baja velocidad: `2.5 / PHYS.turn`). El primer diseño tenía curvas de 35 px: imposibles.
+- La separación mínima entre tramos (217 px) cumple de sobra; para que exista muro entre dos tramos basta con > 2·(half + RUNOFF − 7,8) ≈ 168 px.
+- Trampas elegidas por Claude: acantilados (caída = reaparecer 14 muestras atrás parado), aceite, barro y bloques móviles deterministas por tiempo de carrera. Ninguna en la parrilla ni junto a la salida.
+- Simulación (`sim2.js` en el scratchpad): 4 vueltas OK; ritmo prudente ~255 s sin caídas, ritmo máximo ~188 s con ~8 caídas.
+- El tema es morado (`out: '#221536'`) para que el vacío negro de los acantilados contraste; con el fondo casi negro no se distinguía.
+
 ## Cuentas usadas
 
 - GitHub: `jacobmelendezjm-tech`

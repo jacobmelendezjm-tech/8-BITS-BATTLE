@@ -295,7 +295,7 @@ function snapshot() {
     p: [...players.values()].filter(p => p.joined).map(p => ({
       id: p.id, n: p.name, c: p.color, h: p.isHost, ig: p.inGame, v: !!p.vote,
       ...(p.inGame ? {
-        g: p.grid, x: p.x, y: p.y, a: p.a, pg: p.pg, lp: p.lp,
+        g: p.grid, x: p.x, y: p.y, a: p.a, pg: p.pg, lp: p.lp, fl: p.fl ? 1 : 0,
         fin: p.finished, ft: p.finishTime, pl: p.place,
         ...(mode === 'derby' ? {
           hp: p.hp, al: p.alive, ko: p.kills, kt: p.koTime,
@@ -386,6 +386,7 @@ wss.on('connection', (ws, req) => {
         p.y = Math.round(num(m.y) * 10) / 10;
         p.a = Math.round(num(m.a) * 100) / 100;
         p.pg = Math.round(num(m.pg));
+        p.fl = !!m.fl;                                  // cayendo por un acantilado
         if (!p.finished) p.lp = Math.max(0, Math.min(LAPS, Math.floor(num(m.lp))));
         if (typeof m.best === 'number' && m.best > 0) p.best = Math.round(m.best);
         break;

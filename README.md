@@ -22,8 +22,18 @@ La primera vez, Windows pedirá permiso en el firewall para Node.js: marca **Red
 | VALLE VERDE | Normal | 6 | 0 | Amplio |
 | COSTA SERPIENTE | Difícil | 11 | 6 | Medio |
 | INFIERNO | Extrema | 17 | 11 | Estrecho |
+| DEMENCIA | Demencial ★★★★ | 18 | 17 | Mínimo |
 
 Salirse del asfalto (hierba/tierra) frena mucho, y el muro de neumáticos te devuelve a la pista.
+
+### DEMENCIA: acantilados y trampas
+La pista más difícil: la más estrecha, con el doble de horquillas que INFIERNO y además:
+- **Acantilados** (6 zonas, 2 de ellas puentes con vacío a ambos lados): si te sales del piano por ese lado caes al vacío y reapareces un poco más atrás, parado (pierdes varios segundos).
+- **Manchas de aceite** (7): trompo y casi sin agarre ni volante durante un momento.
+- **Charcos de barro** (4): frenan como la hierba.
+- **Bloques móviles** amarillos y negros (6) que cruzan la pista de lado a lado y te empujan. Siempre queda hueco para pasar.
+
+Comprobado con simulación: se puede terminar (unos 4 min a ritmo prudente sin caerse; a tope se cae varias veces).
 
 ## Modo demolición (ARENA DEL CAOS)
 Se elige como una pista más (la tarjeta rosa de la sala). Arena ovalada cerrada con 4 pilares de neumáticos. En la arena los coches son un 50% más grandes que en las carreras, para que sea más fácil golpearse.
@@ -47,5 +57,5 @@ Se elige como una pista más (la tarjeta rosa de la sala). Arena ovalada cerrada
 
 ## Ajustes
 - `server.js`: `LAPS` (vueltas), `HOST_PICK_MAX` (hasta cuántos pilotos elige el host), `VOTE_MS`, `FINISH_TIMEOUT`, `PORT`.
-- `public/tracks.js`: los puntos de cada pista, su ancho, colores y la física del coche (`PHYS`).
+- `public/tracks.js`: los puntos de cada pista, su ancho, colores y la física del coche (`PHYS`). Una pista puede tener `cliffs`, `oil`, `mud` y `pistons` (ver DEMENCIA).
 - `public/tracks.js` → `DERBY`: reglas del modo demolición (vida, daño de cada golpe y velocidad a partir de la que es fuerte, botiquines, escudos, tiempo límite, tamaño de los coches en la arena `CAR_SCALE`). `ARENAS`: forma de la arena y sus pilares.
