@@ -16,7 +16,9 @@ const WS_URL = ONLINE ? RENDER_WS_URL : `${location.protocol === 'https:' ? 'wss
 let LAPS = 4;
 let HOST_PICK_MAX = 2;
 const STEP_MS = 1000 / 60;         // física a 60 pasos por segundo
-const CAR_R = 13;                  // radio de choque entre coches
+const CAR_R = 13;                  // radio de choque entre coches (en la arena, × DERBY.CAR_SCALE)
+const carScale = () => (race && race.mode === 'derby' ? DERBY.CAR_SCALE : 1);
+const carR = () => CAR_R * carScale();
 const CURB = 10;                   // ancho del piano rojo/blanco
 
 // En móviles/tablets el juego ocupa toda la pantalla y se maneja con flechas y botones táctiles
@@ -566,7 +568,7 @@ function makeDerbyCar(t, g, n, color) {
 // Muros y pilares de la arena
 function arenaWalls(car, t) {
   const pos = { x: car.x, y: car.y };
-  const hit = arenaCollide(t.arena, pos, CAR_R);
+  const hit = arenaCollide(t.arena, pos, carR());
   if (hit) {
     car.x = pos.x; car.y = pos.y;
     const vn = car.vx * hit.nx + car.vy * hit.ny;
@@ -673,17 +675,18 @@ function autopilot(car, t) {
 // además, el otro me empuja con su velocidad y yo informo de mis embestidas.
 function collideRemote(car, others, derby) {
   const touching = new Set();
+  const R2 = carR() * 2;                            // distancia entre centros al tocarse
   for (const o of others) {
     const dx = car.x - o.x, dy = car.y - o.y;
     const d = Math.hypot(dx, dy);
     // Contacto: empieza al chocar de verdad y dura mientras sigáis casi pegados
     // (el margen de 4 px evita que un pequeño rebote cuente como golpe nuevo)
-    if (derby && d > 0 && (d < CAR_R * 2 || (d < CAR_R * 2 + 4 && race.touch.has(o.id)))) touching.add(o.id);
-    if (d >= CAR_R * 2 || d === 0) continue;
+    if (derby && d > 0 && (d < R2 || (d < R2 + 4 && race.touch.has(o.id)))) touching.add(o.id);
+    if (d >= R2 || d === 0) continue;
     const nx = dx / d, ny = dy / d;
     const ram = -(car.vx * nx + car.vy * ny);        // mi velocidad hacia el otro, antes del choque
-    car.x += nx * (CAR_R * 2 - d);
-    car.y += ny * (CAR_R * 2 - d);
+    car.x += nx * (R2 - d);
+    car.y += ny * (R2 - d);
     if (derby) {
       const rel = (car.vx - (o.vx || 0)) * nx + (car.vy - (o.vy || 0)) * ny;
       if (rel < 0) {
@@ -885,11 +888,12 @@ function addSkid(car) {
   if (car.surface === 2 || Math.abs(car.lat) < 1.3) return;
   const g = race.gfx, c = g.ctx;
   const ca = Math.cos(car.angle), sa = Math.sin(car.angle);
+  const k = carScale(), sz = Math.round(4 * k);        // ruedas traseras (más grandes en la arena)
   c.fillStyle = 'rgba(20,18,24,.35)';
-  for (const side of [-7, 7]) {
-    const x = car.x - ca * 12 - sa * side - g.ox;
-    const y = car.y - sa * 12 + ca * side - g.oy;
-    c.fillRect(Math.round(x) - 2, Math.round(y) - 2, 4, 4);
+  for (const side of [-7 * k, 7 * k]) {
+    const x = car.x - ca * 12 * k - sa * side - g.ox;
+    const y = car.y - sa * 12 * k + ca * side - g.oy;
+    c.fillRect(Math.round(x - sz / 2), Math.round(y - sz / 2), sz, sz);
   }
 }
 
@@ -898,6 +902,8 @@ function drawCar(c, car) {
   c.save();
   c.translate(Math.round(car.x), Math.round(car.y));
   c.rotate(car.angle);
+  const k = carScale();
+  if (k !== 1) c.scale(k, k);                 // arena: coches más grandes
   c.fillStyle = 'rgba(0,0,0,.35)';            // sombra
   c.fillRect(-16, -8, 34, 20);
   c.fillStyle = '#111';                       // ruedas
@@ -966,11 +972,12 @@ function draw() {
   }
   ctx.font = "8px 'Press Start 2P', monospace";
   ctx.textAlign = 'center';
+  const lab = Math.round(20 * carScale());     // el nombre, justo encima del coche
   for (const o of r.remotes.values()) {
     ctx.fillStyle = '#000';
-    ctx.fillText(o.name, Math.round(o.x) + 1, Math.round(o.y) - 20);
+    ctx.fillText(o.name, Math.round(o.x) + 1, Math.round(o.y) - lab);
     ctx.fillStyle = o.color;
-    ctx.fillText(o.name, Math.round(o.x), Math.round(o.y) - 21);
+    ctx.fillText(o.name, Math.round(o.x), Math.round(o.y) - lab - 1);
   }
   for (const e of r.fx) {
     const k = (r.frame - e.start) / 60;
@@ -1030,16 +1037,16 @@ function drawDerbyExtras(o, p) {
     if (p.hp <= 20 && fr % 10 < 5) { ctx.fillStyle = '#ffa300'; ctx.fillRect(x - 4, y - 4, 8, 8); }
   }
   if (p.sh > 0 && (p.sh > 2000 || fr % 10 < 6)) {
-    const rad = 27 + Math.sin(fr * 0.2) * 2;
+    const rad = 27 * DERBY.CAR_SCALE + Math.sin(fr * 0.2) * 2;
     ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(41,173,255,.18)'; ctx.fill();
     ctx.strokeStyle = 'rgba(41,173,255,.95)'; ctx.lineWidth = 3; ctx.stroke();
   }
-  const bw = 38;
+  const bw = 48, by = Math.round(y + 21 * DERBY.CAR_SCALE);
   ctx.fillStyle = '#000';
-  ctx.fillRect(x - bw / 2 - 1, y + 21, bw + 2, 7);
+  ctx.fillRect(x - bw / 2 - 1, by, bw + 2, 7);
   ctx.fillStyle = hpColor(p.hp);
-  ctx.fillRect(x - bw / 2, y + 22, Math.round(bw * p.hp / 100), 5);
+  ctx.fillRect(x - bw / 2, by + 1, Math.round(bw * p.hp / 100), 5);
 }
 
 // Marcador. En ordenador: minimapa y velocímetro abajo. En móvil van en la
@@ -1530,7 +1537,7 @@ function derbyEvent(e) {
   const mine = e.id === myId;
   switch (e.k) {
     case 'dmg':
-      if (o) fx(o.x, o.y - 32, `-${e.d}%`, '#ff004d', e.d >= DERBY.HIT_HARD ? 18 : 12);
+      if (o) fx(o.x, o.y - 32 * DERBY.CAR_SCALE, `-${e.d}%`, '#ff004d', e.d >= DERBY.HIT_HARD ? 18 : 12);
       if (mine) {
         race.hurt = race.frame + (e.d >= DERBY.HIT_HARD ? 30 : 16);
         shake = Math.max(shake, e.d >= DERBY.HIT_HARD ? 10 : 5);
@@ -1538,19 +1545,19 @@ function derbyEvent(e) {
       }
       break;
     case 'block':
-      if (o) fx(o.x, o.y - 32, '¡BLOQUEADO!', '#29adff', 10);
+      if (o) fx(o.x, o.y - 32 * DERBY.CAR_SCALE, '¡BLOQUEADO!', '#29adff', 10);
       if (mine) sound.beep(1200, 0.08);
       break;
     case 'heal':
-      if (o) fx(o.x, o.y - 32, `+${e.d}%`, '#00e436', 14);
+      if (o) fx(o.x, o.y - 32 * DERBY.CAR_SCALE, `+${e.d}%`, '#00e436', 14);
       if (mine) { sound.beep(880, 0.1); setTimeout(() => sound.beep(1318, 0.15), 90); }
       break;
     case 'shield':
-      if (o) fx(o.x, o.y - 32, '¡ESCUDO!', '#29adff', 12);
+      if (o) fx(o.x, o.y - 32 * DERBY.CAR_SCALE, '¡ESCUDO!', '#29adff', 12);
       if (mine) { sound.beep(523, 0.1); setTimeout(() => sound.beep(784, 0.2), 90); }
       break;
     case 'ko':
-      if (o) fx(o.x, o.y - 32, 'K.O.', '#ffa300', 20);
+      if (o) fx(o.x, o.y - 32 * DERBY.CAR_SCALE, 'K.O.', '#ffa300', 20);
       if (mine) { banner('¡DESTRUIDO!', '#ff004d', 180); sound.crash(true); }
       else if (e.by === myId) banner(`¡K.O. A ${e.n}!`, '#00e436', 120);
       else banner(`${e.bn} DEJA K.O. A ${e.n}`, e.c, 100);

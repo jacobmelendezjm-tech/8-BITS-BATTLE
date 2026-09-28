@@ -78,6 +78,7 @@ Decisiones tomadas por Claude (no las pidió el usuario; revisar si pide cambios
 - Objetos: "por cada 2 jugadores" = jugadores **vivos**, mínimo 1; cada oleada rellena hasta ese número (no se acumulan). Botiquín no se gasta con 100%.
 - Límite de 3 minutos (gana quien tenga más vida) para que la partida siempre acabe.
 - Se elige como una pista más (4ª tarjeta), con la misma regla host/votación.
+- Después el usuario pidió coches más grandes en la arena ("son muy pequeños y es difícil golpearse"): `DERBY.CAR_SCALE = 1.5` (dibujo y choque). En las carreras siguen igual.
 
 **Fallo antiguo corregido al probar este modo:** en `server.js`, al terminar una partida, la comprobación de "fin de la pantalla de resultados" usaba el tiempo de la partida ya terminada, así que si la carrera duraba más de 12 s se volvía a la sala al instante y **nunca se veían los resultados** (también en el modo carrera, desde el principio).
 

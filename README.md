@@ -24,7 +24,7 @@ La primera vez, Windows pedirá permiso en el firewall para Node.js: marca **Red
 Salirse del asfalto (hierba/tierra) frena mucho, y el muro de neumáticos te devuelve a la pista.
 
 ## Modo demolición (ARENA DEL CAOS)
-Se elige como una pista más (la tarjeta rosa de la sala). Arena ovalada cerrada con 4 pilares de neumáticos.
+Se elige como una pista más (la tarjeta rosa de la sala). Arena ovalada cerrada con 4 pilares de neumáticos. En la arena los coches son un 50% más grandes que en las carreras, para que sea más fácil golpearse.
 - Todos empiezan con **100% de vida**. Con 0% quedas eliminado (K.O.) y pasas a mirar.
 - **Golpe corto** (embistes a poca velocidad, sin carrerilla): quita **5%** al golpeado.
 - **Golpe fuerte** (embistes desde lejos, a más de ~165 km/h en el marcador): quita **20%**.
@@ -46,4 +46,4 @@ Se elige como una pista más (la tarjeta rosa de la sala). Arena ovalada cerrada
 ## Ajustes
 - `server.js`: `LAPS` (vueltas), `HOST_PICK_MAX` (hasta cuántos pilotos elige el host), `VOTE_MS`, `FINISH_TIMEOUT`, `PORT`.
 - `public/tracks.js`: los puntos de cada pista, su ancho, colores y la física del coche (`PHYS`).
-- `public/tracks.js` → `DERBY`: reglas del modo demolición (vida, daño de cada golpe y velocidad a partir de la que es fuerte, botiquines, escudos, tiempo límite). `ARENAS`: forma de la arena y sus pilares.
+- `public/tracks.js` → `DERBY`: reglas del modo demolición (vida, daño de cada golpe y velocidad a partir de la que es fuerte, botiquines, escudos, tiempo límite, tamaño de los coches en la arena `CAR_SCALE`). `ARENAS`: forma de la arena y sus pilares.

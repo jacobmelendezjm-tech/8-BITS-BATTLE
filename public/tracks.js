@@ -239,7 +239,8 @@ const DERBY = {
   SHIELD_MS: 10000,      // un escudo da 10 s de inmunidad
   PER_PLAYERS: 2,        // 1 botiquín / escudo por cada 2 jugadores vivos (mínimo 1)
   TIME: 180000,          // límite de 3 minutos para que la partida siempre acabe
-  PICK_R: 38,            // distancia para recoger un objeto
+  CAR_SCALE: 1.5,        // en la arena los coches son un 50% más grandes (más fácil acertar)
+  PICK_R: 46,            // distancia para recoger un objeto (coches grandes)
 };
 
 const ARENAS = [
